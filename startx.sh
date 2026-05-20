@@ -50,7 +50,7 @@ spinner() {
 }
 
 exibir_logo() {
-    clear
+    command -v clear >/dev/null 2>&1 && clear || printf '\033[2J\033[H'
     echo -e "${MAGENTA}${BOLD}"
     echo "  ██╗    ██╗██╗███╗   ██╗███████╗ ██████╗ ███████╗"
     echo "  ██║    ██║██║████╗  ██║██╔════╝██╔════╝ ╚════██║"
@@ -218,7 +218,7 @@ elif [ "$COMPAT_LEVEL" = "high" ]; then
 fi
 
 # Áudio: Detecção melhorada (PipeWire/PulseAudio)
-configar_audio() {
+configurar_audio() {
     # Verificar PipeWire primeiro
     if pactl info &>/dev/null; then
         local PULSE_SOCKET
@@ -241,7 +241,7 @@ configar_audio() {
     aviso "Audio: Usando configuração padrão"
 }
 
-configar_audio
+configurar_audio
 
 # Debug mode
 if [ $DEBUG_MODE -eq 1 ]; then
