@@ -125,7 +125,10 @@ baixar() {
     local dl_pid=$!
     spinner "$dl_pid" "Baixando $nome..."
     wait "$dl_pid"
-    [ $? -ne 0 ] && erro "Falha ao baixar $nome"
+    if [ $? -ne 0 ]; then
+        rm -f "$dest"
+        erro "Falha ao baixar $nome"
+    fi
     command -v file &>/dev/null && file "$dest" 2>/dev/null | grep -qi "HTML\|ASCII text" && \
         { rm -f "$dest"; erro "Servidor retornou erro ao baixar $nome"; }
 }
@@ -140,8 +143,28 @@ buscar_tar() {
     done
 }
 
+validar_wine_instalacao() {
+    # Verifica se os componentes essenciais do wine foram instalados
+    local componentes_criticos=("$INSTALL_DIR/bin/wine" "$INSTALL_DIR/lib64/wine/kernel32.dll.so")
+    
+    for componente in "${componentes_criticos[@]}"; do
+        if [ ! -f "$componente" ]; then
+            return 1
+        fi
+    done
+    return 0
+}
+
 instalar_wine() {
     info "Instalando Wine Kron4ek wow64..."
+    
+    # Limpar instalação anterior se incompleta
+    if [ -d "$INSTALL_DIR" ] && ! validar_wine_instalacao; then
+        aviso "Instalação anterior incompleta detectada. Limpando..."
+        rm -rf "$INSTALL_DIR"
+        mkdir -p "$INSTALL_DIR"
+    fi
+    
     local GE_TAR
     GE_TAR=$(buscar_tar)
 
@@ -159,25 +182,45 @@ instalar_wine() {
         *) TAR_FLAG="-xf"; TEST_FLAG="-tf" ;;
     esac
 
-    info "Verificando integridade..."
-    tar "$TEST_FLAG" "$GE_TAR" &>/dev/null || erro "Arquivo corrompido."
-    ok "Arquivo íntegro."
+    info "Verificando integridade do arquivo..."
+    if ! tar "$TEST_FLAG" "$GE_TAR" &>/dev/null; then
+        rm -f "$GE_TAR"
+        erro "Arquivo corrompido ou inválido."
+    fi
+    ok "Arquivo verificado."
 
-    tar "$TAR_FLAG" "$GE_TAR" -C "$INSTALL_DIR" --strip-components=1 &
+    info "Extraindo Wine (pode demorar alguns minutos)..."
+    tar "$TAR_FLAG" "$GE_TAR" -C "$INSTALL_DIR" --strip-components=1 2>/dev/null &
     local tar_pid=$!
-    spinner "$tar_pid" "Extraindo Wine (pode demorar)..."
-    wait "$tar_pid" || erro "Falha ao extrair. Delete '$INSTALL_DIR' e tente novamente."
+    spinner "$tar_pid" "Extraindo Wine..."
+    wait "$tar_pid"
+    
+    if [ $? -ne 0 ]; then
+        rm -rf "$INSTALL_DIR"
+        mkdir -p "$INSTALL_DIR"
+        erro "Falha ao extrair. Pasta limpa. Tente novamente."
+    fi
 
+    # Definir permissões de execução
+    info "Configurando permissões..."
     find "$INSTALL_DIR/bin" -type f -exec chmod +x {} \; 2>/dev/null
-    find "$INSTALL_DIR/lib" -type f -exec chmod +x {} \; 2>/dev/null
-    find "$INSTALL_DIR/lib64" -type f -exec chmod +x {} \; 2>/dev/null
-    ok "Wine instalado!"
+    find "$INSTALL_DIR/lib" -type f -name "*.so*" -exec chmod +x {} \; 2>/dev/null
+    find "$INSTALL_DIR/lib64" -type f -name "*.so*" -exec chmod +x {} \; 2>/dev/null
+
+    # Validar instalação
+    if ! validar_wine_instalacao; then
+        rm -rf "$INSTALL_DIR"
+        mkdir -p "$INSTALL_DIR"
+        erro "Instalação incompleta: componentes críticos não encontrados."
+    fi
+
+    ok "Wine instalado e validado com sucesso!"
 }
 
 exibir_logo
 menu_compatibilidade
 
-if [ ! -f "$WINE_BIN" ]; then
+if [ ! -f "$WINE_BIN" ] || ! validar_wine_instalacao; then
     instalar_wine
 fi
 
