@@ -12,7 +12,11 @@ else
     DESKTOP="$HOME/Desktop"
 fi
 
-INSTALL_DIR="$HOME/.cache/wine67"
+# Criar pasta Wine67 no Desktop
+WINE67_DIR="$DESKTOP/Wine67"
+mkdir -p "$WINE67_DIR"
+
+INSTALL_DIR="$WINE67_DIR/wine"
 WINE_BIN="$INSTALL_DIR/bin/wine"
 WINE_URL="https://github.com/Kron4ek/Wine-Builds/releases/download/11.8/wine-11.8-amd64-wow64.tar.xz"
 
@@ -53,14 +57,14 @@ exibir_logo() {
     command -v clear >/dev/null 2>&1 && clear || printf '\033[2J\033[H'
     echo -e "${MAGENTA}${BOLD}"
     echo "  ██╗    ██╗██╗███╗   ██╗███████╗ ██████╗ ███████╗"
-    echo "  ██║    ██║██║████╗  ██║██╔════╝██╔════╝ ╚════██║"
+    echo "  ██║    ██║██║████╗  ██║██╔═��══╝██╔════╝ ╚════██║"
     echo "  ██║ █╗ ██║██║██╔██╗ ██║█████╗  ███████╗     ██╔╝"
     echo "  ██║███╗██║██║██║╚██╗██║██╔══╝  ██╔═══██╗   ██╔╝ "
     echo "  ╚███╔███╔╝██║██║ ╚████║███████╗╚██████╔╝   ██║  "
     echo "   ╚══╝╚══╝ ╚═╝╚═╝  ╚═══╝╚══════╝ ╚═════╝    ╚═╝  "
     echo -e "${RESET}"
     echo -e "  ${DIM}Wine-Kron4ek wow64 Portable Launcher — sem sudo${RESET}"
-    echo -e "  ${DIM}Base: $INSTALL_DIR${RESET}"
+    echo -e "  ${DIM}Base: $WINE67_DIR${RESET}"
     echo -e "  ${DIM}Desktop: $DESKTOP_SESSION | Sessão: $XDG_SESSION_TYPE${RESET}"
     echo ""
 }
@@ -238,8 +242,7 @@ configurar_audio
 echo ""
 echo "Procurando jogos..."
 
-mapfile -t EXES < <(find "$SCRIPT_DIR" -maxdepth 5 -name "*.exe" \
-    -not -path "*/.cache/wine67/*" 2>/dev/null | sort)
+mapfile -t EXES < <(find "$WINE67_DIR" -maxdepth 5 -name "*.exe" 2>/dev/null | sort)
 
 if [ ${#EXES[@]} -eq 0 ]; then
     echo ""
@@ -278,7 +281,7 @@ fi
 
 # Prefix por jogo
 GAME_NAME="$(basename "$SELECTED" .exe | tr -cd '[:alnum:]_-')"
-export WINEPREFIX="$INSTALL_DIR/prefixes/$GAME_NAME"
+export WINEPREFIX="$WINE67_DIR/prefixes/$GAME_NAME"
 mkdir -p "$WINEPREFIX"
 
 echo ""
