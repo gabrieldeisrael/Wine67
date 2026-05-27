@@ -24,9 +24,9 @@ MAGENTA='\033[0;35m'
 DESKTOP_SESSION="${DESKTOP_SESSION:-xfce}"
 XDG_SESSION_TYPE="${XDG_SESSION_TYPE:-x11}"
 
-# Flags de compatibilidade padrão
+# Configuração padrão (modo balanceado)
 DEBUG_MODE=0
-COMPAT_LEVEL="medium"  # low, medium, high
+COMPAT_LEVEL="medium"
 USE_DXVK=1
 DXVK_HUD=""
 
@@ -65,86 +65,48 @@ exibir_logo() {
     echo ""
 }
 
-menu_compatibilidade() {
-    echo ""
-    echo -e "${BOLD}Selecione o nível de compatibilidade:${RESET}"
-    echo ""
-    echo -e "  ${YELLOW}[1]${RESET} ${DIM}BAIXO${RESET}   - Máxima compatibilidade (sem DirectX, mais lento)"
-    echo -e "  ${YELLOW}[2]${RESET} ${DIM}MÉDIO${RESET}  - Balanceado (DirectX/DXVK padrão)"
-    echo -e "  ${YELLOW}[3]${RESET} ${DIM}ALTO${RESET}    - Máxima performance (DXVK HUD + otimizações)"
-    echo -e "  ${YELLOW}[4]${RESET} ${DIM}DEBUG${RESET}   - Modo debug com logs detalhados"
-    echo ""
-    echo -ne "${CYAN}Escolha (1-4): ${RESET}"
-    read -r COMPAT_CHOICE
-
-    case "$COMPAT_CHOICE" in
-        1)
-            COMPAT_LEVEL="low"
-            USE_DXVK=0
-            DXVK_HUD=""
-            ok "Modo: COMPATIBILIDADE (sem DirectX)"
-            ;;
-        2)
-            COMPAT_LEVEL="medium"
-            USE_DXVK=1
-            DXVK_HUD=""
-            ok "Modo: BALANCEADO (DirectX padrão)"
-            ;;
-        3)
-            COMPAT_LEVEL="high"
-            USE_DXVK=1
-            DXVK_HUD="fps"
-            ok "Modo: PERFORMANCE (com HUD de FPS)"
-            ;;
-        4)
-            COMPAT_LEVEL="medium"
-            USE_DXVK=1
-            DEBUG_MODE=1
-            ok "Modo: DEBUG (logs detalhados)"
-            ;;
-        *)
-            aviso "Opção inválida, usando padrão (MÉDIO)"
-            COMPAT_LEVEL="medium"
-            USE_DXVK=1
-            ;;
-    esac
-}
-
-command -v wget &>/dev/null || command -v curl &>/dev/null || erro "Instale wget ou curl"
-command -v tar  &>/dev/null || erro "tar não encontrado"
+# Validações de dependências
+command -v wget >/dev/null 2>&1 || command -v curl >/dev/null 2>&1 || erro "Instale wget ou curl"
+command -v tar >/dev/null 2>&1 || erro "tar não encontrado"
 
 mkdir -p "$INSTALL_DIR"
 
 baixar() {
-    local url="$1" dest="$2" nome="$3"
-    if command -v wget &>/dev/null; then
+    local url="$1"
+    local dest="$2"
+    local nome="$3"
+    
+    if command -v wget >/dev/null 2>&1; then
         wget -q -O "$dest" "$url" &
     else
         curl -L -s -o "$dest" "$url" &
     fi
+    
     local dl_pid=$!
     spinner "$dl_pid" "Baixando $nome..."
-    wait "$dl_pid"
-    if [ $? -ne 0 ]; then
-        rm -f "$dest"
-        erro "Falha ao baixar $nome"
+    wait "$dl_pid" || erro "Falha ao baixar $nome"
+    
+    # Validar se o download foi um erro HTML
+    if command -v file >/dev/null 2>&1; then
+        if file "$dest" 2>/dev/null | grep -qi "HTML\|ASCII text"; then
+            rm -f "$dest"
+            erro "Servidor retornou erro ao baixar $nome"
+        fi
     fi
-    command -v file &>/dev/null && file "$dest" 2>/dev/null | grep -qi "HTML\|ASCII text" && \
-        { rm -f "$dest"; erro "Servidor retornou erro ao baixar $nome"; }
 }
 
 buscar_tar() {
     local resultado=""
     for padrao in "wine-11.8-amd64-wow64.tar.xz" "wine-*.tar.xz" "wine-*.tar.gz" "wine-*.tar"; do
         resultado=$(find "$SCRIPT_DIR" -maxdepth 3 -name "$padrao" 2>/dev/null | head -1)
-        [ -n "$resultado" ] && echo "$resultado" && return
-        resultado=$(find /media /run/media /mnt -maxdepth 5 -name "$padrao" 2>/dev/null | head -1)
-        [ -n "$resultado" ] && echo "$resultado" && return
+        [ -n "$resultado" ] && echo "$resultado" && return 0
+        resultado=$(find /media /run/media /mnt -maxdepth 5 -name "$padrao" 2>/dev/null | head -1 2>/dev/null)
+        [ -n "$resultado" ] && echo "$resultado" && return 0
     done
+    return 1
 }
 
 validar_wine_instalacao() {
-    # Verifica se os componentes essenciais do wine foram instalados
     local componentes_criticos=("$INSTALL_DIR/bin/wine" "$INSTALL_DIR/lib64/wine/kernel32.dll.so")
     
     for componente in "${componentes_criticos[@]}"; do
@@ -166,15 +128,14 @@ instalar_wine() {
     fi
     
     local GE_TAR
-    GE_TAR=$(buscar_tar)
-
-    if [ -n "$GE_TAR" ]; then
+    if GE_TAR=$(buscar_tar); then
         ok "Arquivo encontrado: $GE_TAR"
     else
         GE_TAR="$INSTALL_DIR/wine-kron4ek.tar.xz"
         baixar "$WINE_URL" "$GE_TAR" "Wine-Kron4ek wow64"
     fi
 
+    # Determinar flags de tar baseado na extensão
     local TAR_FLAG TEST_FLAG
     case "$GE_TAR" in
         *.tar.xz) TAR_FLAG="-xJf"; TEST_FLAG="-tJf" ;;
@@ -183,7 +144,7 @@ instalar_wine() {
     esac
 
     info "Verificando integridade do arquivo..."
-    if ! tar "$TEST_FLAG" "$GE_TAR" &>/dev/null; then
+    if ! tar "$TEST_FLAG" "$GE_TAR" >/dev/null 2>&1; then
         rm -f "$GE_TAR"
         erro "Arquivo corrompido ou inválido."
     fi
@@ -193,14 +154,8 @@ instalar_wine() {
     tar "$TAR_FLAG" "$GE_TAR" -C "$INSTALL_DIR" --strip-components=1 2>/dev/null &
     local tar_pid=$!
     spinner "$tar_pid" "Extraindo Wine..."
-    wait "$tar_pid"
+    wait "$tar_pid" || erro "Falha ao extrair Wine."
     
-    if [ $? -ne 0 ]; then
-        rm -rf "$INSTALL_DIR"
-        mkdir -p "$INSTALL_DIR"
-        erro "Falha ao extrair. Pasta limpa. Tente novamente."
-    fi
-
     # Definir permissões de execução
     info "Configurando permissões..."
     find "$INSTALL_DIR/bin" -type f -exec chmod +x {} \; 2>/dev/null
@@ -217,8 +172,8 @@ instalar_wine() {
     ok "Wine instalado e validado com sucesso!"
 }
 
+# Início do script
 exibir_logo
-menu_compatibilidade
 
 if [ ! -f "$WINE_BIN" ] || ! validar_wine_instalacao; then
     instalar_wine
@@ -240,7 +195,7 @@ if [ "$XDG_SESSION_TYPE" = "wayland" ]; then
 fi
 
 if [ -z "$DISPLAY" ]; then
-    [ -n "$WAYLAND_DISPLAY" ] && export DISPLAY=:0 || export DISPLAY=:0
+    export DISPLAY=:0
 fi
 
 # Configurações base do Wine
@@ -249,55 +204,41 @@ export WINE_CPU_TOPOLOGY=4:2
 export WINEDLLOVERRIDES="winemenubuilder=d;rpcss=n;ole32=n;midimap=n"
 export STAGING_SHARED_MEMORY=1
 
-# Configurações específicas por nível de compatibilidade
-if [ "$COMPAT_LEVEL" = "low" ]; then
-    export DXVK_FILTER_DEVICE_NAME=""
-    export WINE_CPU_TOPOLOGY=2:1
-    info "Modo BAIXO: DXVK desativado, CPU reduzida"
-elif [ "$COMPAT_LEVEL" = "high" ]; then
-    export DXVK_HUD="fps,memory"
-    export DXVK_FRAME_RATE=0
-    info "Modo ALTO: Performance máxima com HUD"
-fi
+# Modo balanceado padrão
+export DXVK_HUD=""
+info "Modo: BALANCEADO (DirectX/DXVK padrão)"
 
 # Áudio: Detecção melhorada (PipeWire/PulseAudio)
 configurar_audio() {
-    # Verificar PipeWire primeiro
-    if pactl info &>/dev/null; then
+    # Verificar PulseAudio
+    if command -v pactl >/dev/null 2>&1 && pactl info >/dev/null 2>&1; then
         local PULSE_SOCKET
         PULSE_SOCKET=$(pactl info 2>/dev/null | grep 'Server String' | awk '{print $3}')
         if [ -n "$PULSE_SOCKET" ]; then
             export PULSE_SERVER="unix:$PULSE_SOCKET"
             ok "Audio: PulseAudio detectado"
-            return
+            return 0
         fi
     fi
 
-    # Verificar variáveis de PipeWire
-    if [ -S "$XDG_RUNTIME_DIR/pipewire-0" ]; then
+    # Verificar PipeWire
+    if [ -S "${XDG_RUNTIME_DIR}/pipewire-0" ] 2>/dev/null; then
         export PIPEWIRE_RUNTIME_DIR="$XDG_RUNTIME_DIR"
         ok "Audio: PipeWire detectado"
-        return
+        return 0
     fi
 
     # Fallback: usar valores padrão
     aviso "Audio: Usando configuração padrão"
+    return 0
 }
 
 configurar_audio
 
-# Debug mode
-if [ $DEBUG_MODE -eq 1 ]; then
-    info "Modo DEBUG ativo - criando log..."
-    export WINE_DEBUG="+tid,+seh,+relay"
-    export DXVK_LOG_LEVEL=debug
-    DEBUG_LOG="$INSTALL_DIR/debug_$(date +%s).log"
-fi
-
 echo ""
 echo "Procurando jogos..."
 
-mapfile -t EXES < <(find "$SCRIPT_DIR" -name "*.exe" \
+mapfile -t EXES < <(find "$SCRIPT_DIR" -maxdepth 5 -name "*.exe" \
     -not -path "*/.cache/wine67/*" 2>/dev/null | sort)
 
 if [ ${#EXES[@]} -eq 0 ]; then
@@ -345,18 +286,11 @@ echo -e "${GREEN}╔════════════════════
 echo -e "${GREEN}║ Iniciando: $(basename "$SELECTED")${RESET}"
 echo -e "${GREEN}║ Compatibilidade: ${BOLD}$COMPAT_LEVEL${RESET}${GREEN}${RESET}"
 echo -e "${GREEN}║ Prefix: $GAME_NAME${RESET}"
-if [ $DEBUG_MODE -eq 1 ]; then
-    echo -e "${YELLOW}║ Debug Log: $DEBUG_LOG${RESET}"
-fi
 echo -e "${GREEN}╚═══════════════════════════════════════╝${RESET}"
 echo ""
 
-# Executar jogo com captura opcional de erros
-if [ $DEBUG_MODE -eq 1 ]; then
-    "$WINE_BIN" "$SELECTED" 2>&1 | tee "$DEBUG_LOG"
-else
-    "$WINE_BIN" "$SELECTED"
-fi
+# Executar jogo
+"$WINE_BIN" "$SELECTED"
 
 EXIT=$?
 echo ""
@@ -364,10 +298,4 @@ if [ $EXIT -eq 0 ]; then
     ok "Encerrado normalmente."
 else
     echo -e "${YELLOW}⚠ Código de saída: $EXIT${RESET}"
-    if [ $DEBUG_MODE -eq 1 ]; then
-        info "Log salvo em: $DEBUG_LOG"
-        echo ""
-        echo -e "${DIM}Últimas linhas do log:${RESET}"
-        tail -20 "$DEBUG_LOG"
-    fi
 fi
