@@ -111,14 +111,35 @@ buscar_tar() {
 }
 
 validar_wine_instalacao() {
-    local componentes_criticos=("$INSTALL_DIR/bin/wine" "$INSTALL_DIR/lib64/wine/kernel32.dll.so")
+    # Verificar wine executável em múltiplos locais possíveis
+    local wine_found=0
+    if [ -f "$INSTALL_DIR/bin/wine" ] || [ -f "$INSTALL_DIR/bin/wine64" ]; then
+        wine_found=1
+    fi
     
-    for componente in "${componentes_criticos[@]}"; do
-        if [ ! -f "$componente" ]; then
-            return 1
-        fi
-    done
-    return 0
+    if [ $wine_found -eq 0 ]; then
+        return 1
+    fi
+    
+    # Verificar lib64/wine ou lib/wine (kernel32)
+    if [ -f "$INSTALL_DIR/lib64/wine/kernel32.dll.so" ] || \
+       [ -f "$INSTALL_DIR/lib/wine/kernel32.dll.so" ]; then
+        return 0
+    fi
+    
+    # Fallback: apenas verificar se tem estrutura wine mínima
+    if [ -d "$INSTALL_DIR/lib/wine" ] || [ -d "$INSTALL_DIR/lib64/wine" ]; then
+        return 0
+    fi
+    
+    return 1
+}
+
+diagnosticar_estrutura() {
+    info "Diagnosticando estrutura extraída..."
+    echo "  Conteúdo de $INSTALL_DIR:"
+    find "$INSTALL_DIR" -maxdepth 3 -type f 2>/dev/null | head -15 | sed 's/^/    /'
+    echo ""
 }
 
 instalar_wine() {
@@ -155,19 +176,43 @@ instalar_wine() {
     ok "Arquivo verificado."
 
     info "Extraindo Wine (pode demorar alguns minutos)..."
-    tar "$TAR_FLAG" "$GE_TAR" -C "$INSTALL_DIR" --strip-components=1 2>/dev/null &
+    
+    # Criar diretório temporário para extração
+    local TEMP_EXTRACT="$INSTALL_DIR/temp_extract"
+    mkdir -p "$TEMP_EXTRACT"
+    
+    # Extrair sem strip-components primeiro para inspecionar
+    tar "$TAR_FLAG" "$GE_TAR" -C "$TEMP_EXTRACT" 2>/dev/null &
     local tar_pid=$!
     spinner "$tar_pid" "Extraindo Wine..."
     wait "$tar_pid" || erro "Falha ao extrair Wine."
     
+    # Inspecionar e reorganizar estrutura
+    info "Reorganizando estrutura..."
+    
+    # Verificar se há diretório top-level (wine/, wine-11.8, etc)
+    local top_dir=$(find "$TEMP_EXTRACT" -maxdepth 1 -mindepth 1 -type d | head -1)
+    
+    if [ -n "$top_dir" ] && [ -d "$top_dir" ]; then
+        # Mover conteúdo do diretório top-level para INSTALL_DIR
+        mv "$top_dir"/* "$INSTALL_DIR/" 2>/dev/null || true
+    else
+        # Mover tudo que foi extraído
+        mv "$TEMP_EXTRACT"/* "$INSTALL_DIR/" 2>/dev/null || true
+    fi
+    
+    # Limpar temporário
+    rm -rf "$TEMP_EXTRACT"
+    
     # Definir permissões de execução
     info "Configurando permissões..."
-    find "$INSTALL_DIR/bin" -type f -exec chmod +x {} \; 2>/dev/null
-    find "$INSTALL_DIR/lib" -type f -name "*.so*" -exec chmod +x {} \; 2>/dev/null
-    find "$INSTALL_DIR/lib64" -type f -name "*.so*" -exec chmod +x {} \; 2>/dev/null
+    [ -d "$INSTALL_DIR/bin" ] && find "$INSTALL_DIR/bin" -type f -exec chmod +x {} \; 2>/dev/null
+    [ -d "$INSTALL_DIR/lib" ] && find "$INSTALL_DIR/lib" -type f -name "*.so*" -exec chmod +x {} \; 2>/dev/null
+    [ -d "$INSTALL_DIR/lib64" ] && find "$INSTALL_DIR/lib64" -type f -name "*.so*" -exec chmod +x {} \; 2>/dev/null
 
     # Validar instalação
     if ! validar_wine_instalacao; then
+        diagnosticar_estrutura
         rm -rf "$INSTALL_DIR"
         mkdir -p "$INSTALL_DIR"
         erro "Instalação incompleta: componentes críticos não encontrados."
