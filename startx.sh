@@ -57,7 +57,7 @@ exibir_logo() {
     command -v clear >/dev/null 2>&1 && clear || printf '\033[2J\033[H'
     echo -e "${MAGENTA}${BOLD}"
     echo "  ██╗    ██╗██╗███╗   ██╗███████╗ ██████╗ ███████╗"
-    echo "  ██║    ██║██║████╗  ██║██╔═��══╝██╔════╝ ╚════██║"
+    echo "  ██║    ██║██║████╗  ██║██╔════╝██╔════╝ ╚════██║"
     echo "  ██║ █╗ ██║██║██╔██╗ ██║█████╗  ███████╗     ██╔╝"
     echo "  ██║███╗██║██║██║╚██╗██║██╔══╝  ██╔═══██╗   ██╔╝ "
     echo "  ╚███╔███╔╝██║██║ ╚████║███████╗╚██████╔╝   ██║  "
@@ -240,11 +240,45 @@ configurar_audio() {
 configurar_audio
 
 echo ""
-echo "Procurando jogos..."
+echo "Procurando jogos em múltiplos locais..."
 
-mapfile -t EXES < <(find "$WINE67_DIR" -maxdepth 5 -name "*.exe" 2>/dev/null | sort)
+# Procurar em vários locais: Home, Downloads, Wine67, /media, /mnt
+info "Escaneando diretórios..."
 
-if [ ${#EXES[@]} -eq 0 ]; then
+declare -a EXES
+declare -a SEARCH_PATHS=(
+    "$WINE67_DIR"
+    "$HOME/Downloads"
+    "$HOME/Descargas"
+    "$HOME/Transferências"
+    "/media"
+    "/mnt"
+    "$SCRIPT_DIR"
+)
+
+# Procurar .exe em todos os caminhos
+for search_path in "${SEARCH_PATHS[@]}"; do
+    if [ -d "$search_path" ]; then
+        while IFS= read -r exe_file; do
+            EXES+=("$exe_file")
+        done < <(find "$search_path" -maxdepth 10 -type f -name "*.exe" 2>/dev/null)
+    fi
+done
+
+# Remover duplicatas mantendo a ordem
+declare -a UNIQUE_EXES
+declare -A SEEN_EXES
+for exe in "${EXES[@]}"; do
+    if [ -z "${SEEN_EXES[$exe]}" ]; then
+        UNIQUE_EXES+=("$exe")
+        SEEN_EXES[$exe]=1
+    fi
+done
+
+# Ordenar
+IFS=$'\n' UNIQUE_EXES=($(sort <<<"${UNIQUE_EXES[*]}"))
+
+if [ ${#UNIQUE_EXES[@]} -eq 0 ]; then
     echo ""
     echo -ne "  Nenhum .exe encontrado. Digite o caminho: "
     read -r SELECTED
@@ -255,8 +289,8 @@ else
     echo ""
     echo "Jogos encontrados:"
     echo ""
-    for i in "${!EXES[@]}"; do
-        echo -e "  ${YELLOW}[$((i+1))]${RESET} $(basename "${EXES[$i]}")"
+    for i in "${!UNIQUE_EXES[@]}"; do
+        echo -e "  ${YELLOW}[$((i+1))]${RESET} $(basename "${UNIQUE_EXES[$i]}") ${DIM}($(dirname "${UNIQUE_EXES[$i]}"))"${RESET}
     done
     echo ""
     echo -e "  ${CYAN}[0]${RESET} Digitar caminho manualmente"
@@ -269,8 +303,8 @@ else
         read -r SELECTED
         SELECTED="${SELECTED//\'/}"; SELECTED="${SELECTED//\"/}"
         SELECTED="${SELECTED# }";   SELECTED="${SELECTED% }"
-    elif [[ "$CHOICE" =~ ^[0-9]+$ ]] && [ "$CHOICE" -ge 1 ] && [ "$CHOICE" -le "${#EXES[@]}" ]; then
-        SELECTED="${EXES[$((CHOICE-1))]}"
+    elif [[ "$CHOICE" =~ ^[0-9]+$ ]] && [ "$CHOICE" -ge 1 ] && [ "$CHOICE" -le "${#UNIQUE_EXES[@]}" ]; then
+        SELECTED="${UNIQUE_EXES[$((CHOICE-1))]}"
     else
         erro "Opção inválida"
     fi
