@@ -60,7 +60,7 @@ exibir_logo() {
     echo "  ██║    ██║██║████╗  ██║██╔════╝██╔════╝ ╚════██║"
     echo "  ██║ █╗ ██║██║██╔██╗ ██║█████╗  ███████╗     ██╔╝"
     echo "  ██║███╗██║██║██║╚██╗██║██╔══╝  ██╔═══██╗   ██╔╝ "
-    echo "  ╚███╔███╔╝██║██║ ╚████║███████╗╚██████╔╝   ██║  "
+    echo "  ╚���██╔███╔╝██║██║ ╚████║███████╗╚██████╔╝   ██║  "
     echo "   ╚══╝╚══╝ ╚═╝╚═╝  ╚═══╝╚══════╝ ╚═════╝    ╚═╝  "
     echo -e "${RESET}"
     echo -e "  ${DIM}Wine-Kron4ek wow64 Portable Launcher — sem sudo${RESET}"
@@ -139,6 +139,11 @@ diagnosticar_estrutura() {
     info "Diagnosticando estrutura extraída..."
     echo "  Conteúdo de $INSTALL_DIR:"
     find "$INSTALL_DIR" -maxdepth 3 -type f 2>/dev/null | head -15 | sed 's/^/    /'
+    echo ""
+    
+    # Verificação específica de kernel32
+    echo "  Verificando kernel32.dll.so:"
+    find "$INSTALL_DIR" -name "kernel32.dll.so" -o -name "kernel32*" 2>/dev/null | sed 's/^/    /'
     echo ""
 }
 
@@ -366,9 +371,24 @@ mkdir -p "$WINEPREFIX"
 # Inicializar prefix Wine (criar estrutura Windows)
 if [ ! -f "$WINEPREFIX/system.reg" ]; then
     info "Inicializando Wine prefix..."
-    "$WINE_BIN" wineboot -u 2>/dev/null
-    wait
+    
+    # Use wineboot -i to properly initialize the prefix
+    WINEARCH=win64 WINEPREFIX="$WINEPREFIX" "$WINE_BIN" wineboot -i 2>&1 | tail -5 &
+    local boot_pid=$!
+    spinner "$boot_pid" "Criando estrutura Windows..."
+    wait "$boot_pid"
+    
+    # Verify initialization succeeded
+    if [ ! -f "$WINEPREFIX/system.reg" ]; then
+        erro "Falha ao inicializar Wine prefix - system.reg não foi criado"
+    fi
+    
     ok "Prefix inicializado."
+    
+    # Install runtime dependencies (test execution to build DLL cache)
+    info "Instalando dependências de runtime..."
+    WINEARCH=win64 WINEPREFIX="$WINEPREFIX" "$WINE_BIN" cmd /c exit 2>/dev/null
+    ok "Dependências instaladas."
 fi
 
 echo ""
