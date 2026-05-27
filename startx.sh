@@ -250,7 +250,7 @@ fi
 # Configurações base do Wine
 export WINEARCH=win64
 export WINE_CPU_TOPOLOGY=4:2
-export WINEDLLOVERRIDES="winemenubuilder=d;rpcss=n;ole32=n;midimap=n"
+export WINEDLLOVERRIDES="winemenubuilder=d;rpcss=n;midimap=n"
 export STAGING_SHARED_MEMORY=1
 
 # Modo balanceado padrão
@@ -362,6 +362,14 @@ fi
 GAME_NAME="$(basename "$SELECTED" .exe | tr -cd '[:alnum:]_-')"
 export WINEPREFIX="$WINE67_DIR/prefixes/$GAME_NAME"
 mkdir -p "$WINEPREFIX"
+
+# Inicializar prefix Wine (criar estrutura Windows)
+if [ ! -f "$WINEPREFIX/system.reg" ]; then
+    info "Inicializando Wine prefix..."
+    "$WINE_BIN" wineboot -u 2>/dev/null
+    wait
+    ok "Prefix inicializado."
+fi
 
 echo ""
 echo -e "${GREEN}╔═══════════════════════════════════════╗${RESET}"
