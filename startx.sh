@@ -19,6 +19,7 @@ WINE67_DIR="$DESKTOP/Wine67"
 mkdir -p "$WINE67_DIR"
 
 INSTALL_DIR="$WINE67_DIR/wine"
+PROTON_DIR="$INSTALL_DIR"
 WINE_BIN="$INSTALL_DIR/bin/wine64"
 # Proton 9.0 - Última versão estável com suporte completo
 WINE_URL="https://github.com/GloriousEggroll/proton-ge-custom/releases/download/9.0-GE-1/Proton-9.0-GE-1.tar.gz"
@@ -112,51 +113,36 @@ buscar_tar() {
 }
 
 validar_wine_instalacao() {
-    # Verificar se Wine/Proton está instalado
-    if [ ! -f "$INSTALL_DIR/bin/wine64" ] && [ ! -f "$INSTALL_DIR/bin/wine" ]; then
-        return 1
-    fi
-    
-    # CRÍTICO: Verificar que DLLs nativas existem
-    local has_libs=0
-    if find "$INSTALL_DIR" \( -name "kernel32.dll.so" -o -name "ntdll.dll.so" \) 2>/dev/null | grep -q .; then
-        has_libs=1
-    fi
-    
-    # Para Proton, também aceita se tem arquivos de runtime
-    if [ ! -d "$INSTALL_DIR/lib64/wine" ] && [ ! -d "$INSTALL_DIR/lib/wine" ] && [ $has_libs -eq 0 ]; then
-        if [ ! -d "$INSTALL_DIR/compatlib" ]; then
+    # Verificar se Proton está instalado
+    if [ ! -d "$PROTON_DIR/proton-9.0-ge-1" ] && [ ! -d "$PROTON_DIR/Proton-9.0-GE-1" ]; then
+        if [ ! -f "$INSTALL_DIR/bin/wine64" ]; then
             return 1
         fi
+    fi
+    
+    # Verificar estrutura básica
+    if [ ! -d "$INSTALL_DIR/lib" ] && [ ! -d "$INSTALL_DIR/lib64" ]; then
+        return 1
     fi
     
     return 0
 }
 
 diagnosticar_estrutura() {
-    info "Diagnosticando estrutura extraída..."
+    info "Diagnosticando estrutura..."
     echo ""
-    echo "  📁 Conteúdo de $INSTALL_DIR (top-level):"
-    ls -1 "$INSTALL_DIR" 2>/dev/null | sed 's/^/    /' || echo "    [vazio]"
-    echo ""
-    
-    echo "  🔍 Procurando componentes Wine/Proton:"
-    find "$INSTALL_DIR" -maxdepth 3 -type d \( -name "wine" -o -name "lib64" -o -name "lib32" -o -name "compatlib" \) 2>/dev/null | sed 's/^/    /'
+    echo "  📁 Conteúdo de $INSTALL_DIR:"
+    ls -1 "$INSTALL_DIR" 2>/dev/null | head -20 | sed 's/^/    /' || echo "    [vazio]"
     echo ""
     
-    echo "  🔧 Binários Wine:"
-    ls -lah "$INSTALL_DIR"/bin/wine* 2>/dev/null | sed 's/^/    /' || echo "    ❌ Não encontrados"
-    echo ""
-    
-    echo "  📦 Tamanho da instalação:"
+    echo "  📦 Tamanho:"
     du -sh "$INSTALL_DIR" 2>/dev/null | sed 's/^/    /'
-    echo ""
 }
 
 instalar_wine() {
-    info "Instalando Proton-GE 9.0 (Wine + Proton + DXVK integrado)..."
+    info "Instalando Proton-GE 9.0..."
     
-    if [ -d "$INSTALL_DIR" ]; then
+    if [ -d "$INSTALL_DIR" ] && [ "$(ls -A "$INSTALL_DIR")" ]; then
         aviso "Removendo instalação anterior..."
         rm -rf "$INSTALL_DIR"
         mkdir -p "$INSTALL_DIR"
@@ -167,15 +153,8 @@ instalar_wine() {
         ok "Arquivo encontrado: $GE_TAR"
     else
         GE_TAR="$INSTALL_DIR/proton-ge.tar.gz"
-        info "Baixando Proton-GE 9.0 (~800MB, pode demorar)..."
+        info "Baixando Proton-GE 9.0 (~800MB)..."
         baixar "$WINE_URL" "$GE_TAR" "Proton-GE 9.0"
-    fi
-
-    # Verificar tamanho
-    local TAR_SIZE=$(stat -f%z "$GE_TAR" 2>/dev/null || stat -c%s "$GE_TAR" 2>/dev/null)
-    if [ "$TAR_SIZE" -lt 500000000 ]; then
-        aviso "⚠️  Arquivo Proton parece pequeno demais ($TAR_SIZE bytes)"
-        aviso "Download pode estar incompleto"
     fi
 
     # Determinar flags de tar
@@ -186,47 +165,46 @@ instalar_wine() {
         *) TAR_FLAG="-xf"; TEST_FLAG="-tf" ;;
     esac
 
-    info "Verificando integridade do arquivo..."
+    info "Verificando integridade..."
     if ! tar "$TEST_FLAG" "$GE_TAR" >/dev/null 2>&1; then
         rm -f "$GE_TAR"
-        erro "Arquivo corrompido. Download será refeito."
+        erro "Arquivo corrompido."
     fi
     ok "Arquivo verificado."
 
-    info "Extraindo Proton (pode demorar alguns minutos)..."
+    info "Extraindo Proton..."
     
     rm -rf "$INSTALL_DIR/temp_extract"
     mkdir -p "$INSTALL_DIR/temp_extract"
     
-    tar "$TAR_FLAG" "$GE_TAR" -C "$INSTALL_DIR/temp_extract" 2>/dev/null &
+    tar "$TAR_FLAG" "$GE_TAR" -C "$INSTALL_DIR/temp_extract" &
     local tar_pid=$!
-    spinner "$tar_pid" "Extraindo Proton..."
+    spinner "$tar_pid" "Extraindo..."
     wait "$tar_pid" || true
     
-    info "Reorganizando estrutura..."
+    info "Reorganizando..."
     
-    # Proton-GE vem em diretório específico (Proton-9.0-GE-1/)
+    # Proton vem em subdiretório
     local top_dir=$(find "$INSTALL_DIR/temp_extract" -maxdepth 1 -mindepth 1 -type d | head -1)
     
     if [ -n "$top_dir" ]; then
+        # Mover tudo de dentro do subdir para INSTALL_DIR
         mv "$top_dir"/* "$INSTALL_DIR/" 2>/dev/null || true
-        mv "$top_dir"/. "$INSTALL_DIR/" 2>/dev/null || true
+        # Copiar também arquivos ocultos se houver
+        mv "$top_dir"/.[!.]* "$INSTALL_DIR/" 2>/dev/null || true
     fi
     
     rm -rf "$INSTALL_DIR/temp_extract"
     
-    # Proton precisa de permissões especiais
     info "Configurando permissões..."
-    find "$INSTALL_DIR" -type f -name "*.so*" -exec chmod +x {} \; 2>/dev/null || true
-    find "$INSTALL_DIR/bin" -type f -exec chmod +x {} \; 2>/dev/null || true
-    chmod +x "$INSTALL_DIR/proton" 2>/dev/null || true
+    find "$INSTALL_DIR" -type f \( -name "wine*" -o -name "proton" \) -exec chmod +x {} \; 2>/dev/null || true
 
     if ! validar_wine_instalacao; then
         diagnosticar_estrutura
         erro "FALHA: Proton não foi instalado corretamente."
     fi
 
-    ok "Proton-GE 9.0 instalado com sucesso!"
+    ok "Proton-GE 9.0 instalado!"
 }
 
 # ============================================================================
@@ -259,46 +237,49 @@ if ! validar_wine_instalacao; then
     instalar_wine
 fi
 
-# Buscar wine64 ou wine
-if [ -f "$INSTALL_DIR/bin/wine64" ]; then
+# Detectar estrutura Proton
+PROTON_BINARY=""
+if [ -f "$INSTALL_DIR/proton" ]; then
+    PROTON_BINARY="$INSTALL_DIR/proton"
     WINE_BIN="$INSTALL_DIR/bin/wine64"
+elif [ -f "$INSTALL_DIR/bin/wine64" ]; then
+    WINE_BIN="$INSTALL_DIR/bin/wine64"
+    PROTON_BINARY=""
 elif [ -f "$INSTALL_DIR/bin/wine" ]; then
     WINE_BIN="$INSTALL_DIR/bin/wine"
+    PROTON_BINARY=""
 else
-    # Tentar encontrar em proton (Proton é um wrapper)
-    if [ -f "$INSTALL_DIR/proton" ]; then
-        info "Usando Proton (wrapper)"
-        WINE_BIN="$INSTALL_DIR/proton"
-    else
-        erro "Wine/Proton binary não encontrado!"
-    fi
+    erro "Wine/Proton binary não encontrado!"
 fi
 
 chmod +x "$WINE_BIN" 2>/dev/null || true
+[ -n "$PROTON_BINARY" ] && chmod +x "$PROTON_BINARY" 2>/dev/null || true
 
-ok "Wine/Proton: $WINE_BIN"
-if [ -x "$WINE_BIN" ]; then
-    WINE_VERSION=$("$WINE_BIN" --version 2>/dev/null || echo "Proton (versão desconhecida)")
-else
-    WINE_VERSION="Proton (versão desconhecida)"
-fi
-ok "Versão: $WINE_VERSION"
+ok "Wine: $WINE_BIN"
+ok "Proton: ${PROTON_BINARY:-[não usado]}"
 
 # ============================================================================
-# VARIÁVEIS DE AMBIENTE
+# VARIÁVEIS DE AMBIENTE - CRÍTICAS PARA PROTON
 # ============================================================================
 
-export LD_LIBRARY_PATH="$INSTALL_DIR/lib64:$INSTALL_DIR/lib32:$INSTALL_DIR/lib:${LD_LIBRARY_PATH:-}"
+# Para Proton, LD_LIBRARY_PATH DEVE vir ANTES
+export LD_LIBRARY_PATH="$INSTALL_DIR/lib64:$INSTALL_DIR/lib:${LD_LIBRARY_PATH:-}"
 export PATH="$INSTALL_DIR/bin:$PATH"
 
+# CRÍTICO: Informar ao Wine/Proton onde estão seus binários
 export WINELOADER="$WINE_BIN"
 export WINESERVER="$INSTALL_DIR/bin/wineserver"
-export PROTON_USE_WINED3D=1
 
-# DXVK está integrado no Proton
+# DirectX integrado no Proton
 export DXVK_HUD=off
 export STAGING_SHARED_MEMORY=1
+
+# Sobrescrita de DLLs - IMPORTANTE: deixar nativas
 export WINEDLLOVERRIDES="winemenubuilder=d;rpcss=n;midimap=n"
+
+# Force Proton usar suas libs
+export PROTON_NO_ESYNC=0
+export PROTON_USE_WINED3D=0
 
 if [ "$XDG_SESSION_TYPE" = "wayland" ]; then
     aviso "Detectado Wayland - pode ter incompatibilidades"
@@ -310,21 +291,20 @@ if [ -z "$DISPLAY" ]; then
     export DISPLAY=:0
 fi
 
-info "Modo: ALTO DESEMPENHO (Proton + DXVK integrado)"
+info "Modo: PROTON-GE 9.0 com DXVK"
+info "LD_LIBRARY_PATH: $INSTALL_DIR/lib64:lib"
 
 # Áudio
 if command -v pactl >/dev/null 2>&1 && pactl info >/dev/null 2>&1; then
-    ok "Audio: PulseAudio detectado"
+    ok "Audio: PulseAudio"
 elif [ -S "${XDG_RUNTIME_DIR}/pipewire-0" ] 2>/dev/null; then
-    ok "Audio: PipeWire detectado"
-else
-    aviso "Audio: Usando configuração padrão"
+    ok "Audio: PipeWire"
 fi
 
 echo ""
-echo "Procurando jogos em múltiplos locais..."
+echo "Procurando jogos..."
 
-info "Escaneando diretórios..."
+info "Escaneando..."
 
 declare -a EXES
 declare -a SEARCH_PATHS=(
@@ -358,80 +338,66 @@ IFS=$'\n' UNIQUE_EXES=($(sort <<<"${UNIQUE_EXES[*]}"))
 
 if [ ${#UNIQUE_EXES[@]} -eq 0 ]; then
     echo ""
-    echo -ne "  Nenhum .exe encontrado. Digite o caminho: "
+    echo -ne "  Caminho: "
     read -r SELECTED
     SELECTED="${SELECTED//\'/}"; SELECTED="${SELECTED//\"/}"
     SELECTED="${SELECTED# }";   SELECTED="${SELECTED% }"
-    [ -f "$SELECTED" ] || erro "Arquivo não encontrado: '$SELECTED'"
+    [ -f "$SELECTED" ] || erro "Não encontrado: '$SELECTED'"
 else
     echo ""
-    echo "Jogos encontrados:"
+    echo "Jogos:"
     echo ""
     for i in "${!UNIQUE_EXES[@]}"; do
-        echo -e "  ${YELLOW}[$((i+1))]${RESET} $(basename "${UNIQUE_EXES[$i]}") ${DIM}($(dirname "${UNIQUE_EXES[$i]}"))"${RESET}
+        echo -e "  ${YELLOW}[$((i+1))]${RESET} $(basename "${UNIQUE_EXES[$i]}")"
     done
-    echo ""
-    echo -e "  ${CYAN}[0]${RESET} Digitar caminho manualmente"
     echo ""
     echo -ne "${CYAN}Escolha: ${RESET}"
     read -r CHOICE
 
-    if [ "$CHOICE" = "0" ]; then
-        echo -ne "  Caminho: "
-        read -r SELECTED
-        SELECTED="${SELECTED//\'/}"; SELECTED="${SELECTED//\"/}"
-        SELECTED="${SELECTED# }";   SELECTED="${SELECTED% }"
-    elif [[ "$CHOICE" =~ ^[0-9]+$ ]] && [ "$CHOICE" -ge 1 ] && [ "$CHOICE" -le "${#UNIQUE_EXES[@]}" ]; then
+    if [[ "$CHOICE" =~ ^[0-9]+$ ]] && [ "$CHOICE" -ge 1 ] && [ "$CHOICE" -le "${#UNIQUE_EXES[@]}" ]; then
         SELECTED="${UNIQUE_EXES[$((CHOICE-1))]}"
     else
         erro "Opção inválida"
     fi
 fi
 
-[ -z "$SELECTED" ] && erro "Nenhum arquivo selecionado."
-[ ! -f "$SELECTED" ] && erro "Arquivo não encontrado: '$SELECTED'"
+[ ! -f "$SELECTED" ] && erro "Não encontrado: '$SELECTED'"
 
 DETECTED_ARCH=$(detectar_arquitetura_exe "$SELECTED")
 WINE_ARCH="$DETECTED_ARCH"
 
-info "Arquitetura detectada: $WINE_ARCH"
+info "Arquitetura: $WINE_ARCH"
 
 GAME_NAME="$(basename "$SELECTED" .exe | tr -cd '[:alnum:]_-')"
 export WINEPREFIX="$WINE67_DIR/prefixes/$GAME_NAME"
 mkdir -p "$WINEPREFIX"
 
 if [ ! -f "$WINEPREFIX/system.reg" ]; then
-    info "Inicializando Wine prefix ($WINE_ARCH) para $GAME_NAME..."
+    info "Inicializando prefix ($WINE_ARCH)..."
     
-    WINEARCH="$WINE_ARCH" WINEPREFIX="$WINEPREFIX" "$WINE_BIN" wineboot -i 2>&1 | tail -3 &
+    WINEARCH="$WINE_ARCH" WINEPREFIX="$WINEPREFIX" "$WINE_BIN" wineboot -i 2>&1 | tail -2 &
     local boot_pid=$!
-    spinner "$boot_pid" "Criando estrutura Windows ($WINE_ARCH)..."
+    spinner "$boot_pid" "Criando Windows ($WINE_ARCH)..."
     wait "$boot_pid" || true
     
-    if [ ! -f "$WINEPREFIX/system.reg" ]; then
-        aviso "Tentando método alternativo..."
-        WINEARCH="$WINE_ARCH" WINEPREFIX="$WINEPREFIX" "$WINE_BIN" wineboot -u 2>&1 | tail -3
-    fi
-    
-    ok "Prefix inicializado ($WINE_ARCH)."
+    ok "Prefix pronto"
 fi
 
 echo ""
 echo -e "${GREEN}╔═════════════════════════════════════════════╗${RESET}"
-echo -e "${GREEN}║ 🎮 Jogo: $(basename "$SELECTED")${RESET}"
-echo -e "${GREEN}║ 🔧 Arquitetura: ${BOLD}$WINE_ARCH${RESET}${GREEN}${RESET}"
-echo -e "${GREEN}║ 📊 Compatibilidade: $COMPAT_LEVEL${RESET}"
-echo -e "${GREEN}║ 🚀 Motor: Proton-GE 9.0 (DXVK integrado)${RESET}"
-echo -e "${GREEN}║ 📁 Prefix: $GAME_NAME${RESET}"
+echo -e "${GREEN}║ 🎮 $(basename "$SELECTED")${RESET}"
+echo -e "${GREEN}║ 🔧 $WINE_ARCH | 🚀 Proton-GE 9.0 + DXVK${RESET}"
+echo -e "${GREEN}║ 📁 $GAME_NAME${RESET}"
 echo -e "${GREEN}╚═════════════════════════════════════════════╝${RESET}"
 echo ""
 
-WINEARCH="$WINE_ARCH" WINEPREFIX="$WINEPREFIX" "$WINE_BIN" "$SELECTED"
+# EXECUTAR com LD_LIBRARY_PATH garantido
+WINEARCH="$WINE_ARCH" WINEPREFIX="$WINEPREFIX" LD_LIBRARY_PATH="$INSTALL_DIR/lib64:$INSTALL_DIR/lib:${LD_LIBRARY_PATH:-}" "$WINE_BIN" "$SELECTED"
 
 EXIT=$?
 echo ""
 if [ $EXIT -eq 0 ]; then
-    ok "Jogo encerrado normalmente."
+    ok "Jogo encerrado"
 else
-    echo -e "${YELLOW}⚠  Código de saída: $EXIT${RESET}"
+    echo -e "${YELLOW}⚠  Saída: $EXIT${RESET}"
 fi
