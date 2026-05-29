@@ -1,10 +1,10 @@
 #!/bin/bash
 
-set -e  # Parar em qualquer erro
+set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# detecta desktop em português ou inglês
+# Detecta desktop em português ou inglês
 if [ -d "$HOME/Área de Trabalho" ]; then
     DESKTOP="$HOME/Área de Trabalho"
 elif [ -d "$HOME/Desktop" ]; then
@@ -19,9 +19,9 @@ WINE67_DIR="$DESKTOP/Wine67"
 mkdir -p "$WINE67_DIR"
 
 INSTALL_DIR="$WINE67_DIR/wine"
-WINE_BIN_64="$INSTALL_DIR/bin/wine64"
-WINE_BIN_32="$INSTALL_DIR/bin/wine"
-WINE_URL="https://github.com/Kron4ek/Wine-Builds/releases/download/11.8/wine-11.8-amd64-wow64.tar.xz"
+WINE_BIN="$INSTALL_DIR/bin/wine64"
+# Proton 9.0 - Última versão estável com suporte completo
+WINE_URL="https://github.com/GloriousEggroll/proton-ge-custom/releases/download/9.0-GE-1/Proton-9.0-GE-1.tar.gz"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
 CYAN='\033[0;36m'; BOLD='\033[1m'; DIM='\033[2m'; RESET='\033[0m'
@@ -31,11 +31,10 @@ MAGENTA='\033[0;35m'
 DESKTOP_SESSION="${DESKTOP_SESSION:-xfce}"
 XDG_SESSION_TYPE="${XDG_SESSION_TYPE:-x11}"
 
-# Configuração padrão (modo balanceado)
 DEBUG_MODE=0
-COMPAT_LEVEL="medium"
+COMPAT_LEVEL="high"
 USE_DXVK=1
-WINE_ARCH="win64"  # Pode ser "win32" ou "win64"
+WINE_ARCH="win64"
 
 erro()  { echo -e "${RED}❌ $1${RESET}"; exit 1; }
 ok()    { echo -e "${GREEN}✔  $1${RESET}"; }
@@ -66,8 +65,7 @@ exibir_logo() {
     echo "  ╚███╔███╔╝██║██║ ╚████║███████╗╚██████╔╝   ██║  "
     echo "   ╚══╝╚══╝ ╚═╝╚═╝  ╚═══╝╚══════╝ ╚═════╝    ╚═╝  "
     echo -e "${RESET}"
-    echo -e "  ${DIM}Wine-Kron4ek wow64 Portable Launcher — sem sudo${RESET}"
-    echo -e "  ${DIM}Suporte: 64-bit (win64) e 32-bit (win32)${RESET}"
+    echo -e "  ${DIM}Proton-GE Portable Game Launcher — sem sudo${RESET}"
     echo -e "  ${DIM}Base: $WINE67_DIR${RESET}"
     echo -e "  ${DIM}Desktop: $DESKTOP_SESSION | Sessão: $XDG_SESSION_TYPE${RESET}"
     echo ""
@@ -94,7 +92,6 @@ baixar() {
     spinner "$dl_pid" "Baixando $nome..."
     wait "$dl_pid" || erro "Falha ao baixar $nome"
     
-    # Validar se o download foi um erro HTML
     if command -v file >/dev/null 2>&1; then
         if file "$dest" 2>/dev/null | grep -qi "HTML\|ASCII text"; then
             rm -f "$dest"
@@ -105,7 +102,7 @@ baixar() {
 
 buscar_tar() {
     local resultado=""
-    for padrao in "wine-11.8-amd64-wow64.tar.xz" "wine-*.tar.xz" "wine-*.tar.gz" "wine-*.tar"; do
+    for padrao in "Proton-*.tar.gz" "proton-*.tar.xz" "wine-*.tar.xz" "wine-*.tar.gz" "wine-*.tar"; do
         resultado=$(find "$SCRIPT_DIR" -maxdepth 3 -name "$padrao" 2>/dev/null | head -1)
         [ -n "$resultado" ] && echo "$resultado" && return 0
         resultado=$(find /media /run/media /mnt -maxdepth 5 -name "$padrao" 2>/dev/null | head -1 2>/dev/null)
@@ -115,19 +112,22 @@ buscar_tar() {
 }
 
 validar_wine_instalacao() {
-    # Verificar se Wine64 e Wine32 estão instalados (wow64 = ambos)
-    if [ ! -f "$WINE_BIN_64" ] && [ ! -f "$WINE_BIN_32" ]; then
+    # Verificar se Wine/Proton está instalado
+    if [ ! -f "$INSTALL_DIR/bin/wine64" ] && [ ! -f "$INSTALL_DIR/bin/wine" ]; then
         return 1
     fi
     
-    # CRÍTICO: Verificar DLLs nativas - procurar em qualquer lugar
-    local has_kernel32=0
-    if find "$INSTALL_DIR" -name "kernel32.dll.so" 2>/dev/null | grep -q .; then
-        has_kernel32=1
+    # CRÍTICO: Verificar que DLLs nativas existem
+    local has_libs=0
+    if find "$INSTALL_DIR" \( -name "kernel32.dll.so" -o -name "ntdll.dll.so" \) 2>/dev/null | grep -q .; then
+        has_libs=1
     fi
     
-    if [ $has_kernel32 -eq 0 ]; then
-        return 1
+    # Para Proton, também aceita se tem arquivos de runtime
+    if [ ! -d "$INSTALL_DIR/lib64/wine" ] && [ ! -d "$INSTALL_DIR/lib/wine" ] && [ $has_libs -eq 0 ]; then
+        if [ ! -d "$INSTALL_DIR/compatlib" ]; then
+            return 1
+        fi
     fi
     
     return 0
@@ -140,32 +140,22 @@ diagnosticar_estrutura() {
     ls -1 "$INSTALL_DIR" 2>/dev/null | sed 's/^/    /' || echo "    [vazio]"
     echo ""
     
-    echo "  🔍 Procurando kernel32.dll.so em qualquer lugar:"
-    local found=$(find "$INSTALL_DIR" -name "kernel32.dll.so" -type f 2>/dev/null | head -3)
-    if [ -n "$found" ]; then
-        echo "$found" | sed 's/^/    /'
-    else
-        echo "    ❌ NÃO ENCONTRADO! Wine pode estar corrompido."
-    fi
-    echo ""
-    
-    echo "  📚 Todos os diretórios lib:"
-    find "$INSTALL_DIR" -maxdepth 2 -type d -name "lib*" 2>/dev/null | sed 's/^/    /'
+    echo "  🔍 Procurando componentes Wine/Proton:"
+    find "$INSTALL_DIR" -maxdepth 3 -type d \( -name "wine" -o -name "lib64" -o -name "lib32" -o -name "compatlib" \) 2>/dev/null | sed 's/^/    /'
     echo ""
     
     echo "  🔧 Binários Wine:"
     ls -lah "$INSTALL_DIR"/bin/wine* 2>/dev/null | sed 's/^/    /' || echo "    ❌ Não encontrados"
     echo ""
     
-    echo "  📦 Conteúdo de lib (se existir):"
-    find "$INSTALL_DIR/lib" -maxdepth 2 -type d 2>/dev/null | head -10 | sed 's/^/    /'
+    echo "  📦 Tamanho da instalação:"
+    du -sh "$INSTALL_DIR" 2>/dev/null | sed 's/^/    /'
     echo ""
 }
 
 instalar_wine() {
-    info "Instalando Wine Kron4ek wow64 (64-bit + 32-bit)..."
+    info "Instalando Proton-GE 9.0 (Wine + Proton + DXVK integrado)..."
     
-    # Limpar instalação anterior COMPLETAMENTE
     if [ -d "$INSTALL_DIR" ]; then
         aviso "Removendo instalação anterior..."
         rm -rf "$INSTALL_DIR"
@@ -176,16 +166,16 @@ instalar_wine() {
     if GE_TAR=$(buscar_tar); then
         ok "Arquivo encontrado: $GE_TAR"
     else
-        GE_TAR="$INSTALL_DIR/wine-kron4ek.tar.xz"
-        info "Baixando Wine (este é um arquivo grande, pode demorar)..."
-        baixar "$WINE_URL" "$GE_TAR" "Wine-Kron4ek wow64"
+        GE_TAR="$INSTALL_DIR/proton-ge.tar.gz"
+        info "Baixando Proton-GE 9.0 (~800MB, pode demorar)..."
+        baixar "$WINE_URL" "$GE_TAR" "Proton-GE 9.0"
     fi
 
-    # Verificar tamanho do arquivo
+    # Verificar tamanho
     local TAR_SIZE=$(stat -f%z "$GE_TAR" 2>/dev/null || stat -c%s "$GE_TAR" 2>/dev/null)
-    if [ "$TAR_SIZE" -lt 50000000 ]; then
-        aviso "⚠️  Arquivo Wine parece pequeno demais ($TAR_SIZE bytes)"
-        aviso "Pode estar incompleto. Tentando de qualquer forma..."
+    if [ "$TAR_SIZE" -lt 500000000 ]; then
+        aviso "⚠️  Arquivo Proton parece pequeno demais ($TAR_SIZE bytes)"
+        aviso "Download pode estar incompleto"
     fi
 
     # Determinar flags de tar
@@ -199,81 +189,52 @@ instalar_wine() {
     info "Verificando integridade do arquivo..."
     if ! tar "$TEST_FLAG" "$GE_TAR" >/dev/null 2>&1; then
         rm -f "$GE_TAR"
-        erro "Arquivo corrompido ou inválido. Download será refeito na próxima execução."
+        erro "Arquivo corrompido. Download será refeito."
     fi
     ok "Arquivo verificado."
 
-    info "Extraindo Wine (pode demorar alguns minutos)..."
+    info "Extraindo Proton (pode demorar alguns minutos)..."
     
-    # Limpar temporário se existir
     rm -rf "$INSTALL_DIR/temp_extract"
     mkdir -p "$INSTALL_DIR/temp_extract"
     
-    # Extrair arquivo SEM redirecionamento de erro
-    tar "$TAR_FLAG" "$GE_TAR" -C "$INSTALL_DIR/temp_extract" &
+    tar "$TAR_FLAG" "$GE_TAR" -C "$INSTALL_DIR/temp_extract" 2>/dev/null &
     local tar_pid=$!
-    spinner "$tar_pid" "Extraindo Wine (verifique espaço em disco)..."
-    wait "$tar_pid" || {
-        aviso "Extração completada (pode estar parcial)"
-    }
+    spinner "$tar_pid" "Extraindo Proton..."
+    wait "$tar_pid" || true
     
-    # Reorganizar estrutura
     info "Reorganizando estrutura..."
     
-    # Verificar o que foi extraído
+    # Proton-GE vem em diretório específico (Proton-9.0-GE-1/)
     local top_dir=$(find "$INSTALL_DIR/temp_extract" -maxdepth 1 -mindepth 1 -type d | head -1)
     
-    if [ -n "$top_dir" ] && [ "$(ls "$top_dir" 2>/dev/null | wc -l)" -gt 0 ]; then
-        # Mover conteúdo do diretório top-level
-        info "Movendo conteúdo de $(basename "$top_dir")..."
+    if [ -n "$top_dir" ]; then
         mv "$top_dir"/* "$INSTALL_DIR/" 2>/dev/null || true
-    else
-        # Mover arquivos soltos
-        info "Movendo arquivos soltos..."
-        mv "$INSTALL_DIR/temp_extract"/* "$INSTALL_DIR/" 2>/dev/null || true
+        mv "$top_dir"/. "$INSTALL_DIR/" 2>/dev/null || true
     fi
     
-    # Limpar temporário
     rm -rf "$INSTALL_DIR/temp_extract"
     
-    # Definir permissões
+    # Proton precisa de permissões especiais
     info "Configurando permissões..."
-    find "$INSTALL_DIR" -type f \( -executable -o -name "*.so*" \) 2>/dev/null | while read f; do 
-        chmod +x "$f" 2>/dev/null || true
-    done
+    find "$INSTALL_DIR" -type f -name "*.so*" -exec chmod +x {} \; 2>/dev/null || true
+    find "$INSTALL_DIR/bin" -type f -exec chmod +x {} \; 2>/dev/null || true
+    chmod +x "$INSTALL_DIR/proton" 2>/dev/null || true
 
-    # Validação CRÍTICA
     if ! validar_wine_instalacao; then
         diagnosticar_estrutura
-        
-        # Oferecer alternativas
-        echo ""
-        aviso "FALHA na instalação: kernel32.dll.so não encontrado!"
-        echo ""
-        echo "Possíveis causas:"
-        echo "  1. Download incompleto (arquivo muito pequeno)"
-        echo "  2. Sem espaço em disco"
-        echo "  3. Arquivo Wine corrompido no servidor"
-        echo ""
-        echo "Soluções:"
-        echo "  - Tente novamente (será refeito o download)"
-        echo "  - Verifique espaço em disco: df -h"
-        echo "  - Tente outro source do Wine"
-        echo ""
-        
-        exit 1
+        erro "FALHA: Proton não foi instalado corretamente."
     fi
 
-    ok "Wine wow64 (64+32 bits) instalado com sucesso!"
+    ok "Proton-GE 9.0 instalado com sucesso!"
 }
 
 # ============================================================================
-# DETECTAR ARQUITETURA DO EXECUTÁVEL
+# DETECTAR ARQUITETURA
 # ============================================================================
 detectar_arquitetura_exe() {
     local exe="$1"
     
-    # Usar 'file' para detectar se é 32 ou 64 bits
     if command -v file >/dev/null 2>&1; then
         local file_info=$(file "$exe" 2>/dev/null)
         
@@ -286,7 +247,6 @@ detectar_arquitetura_exe() {
         fi
     fi
     
-    # Fallback: tentar executar com win64, se falhar tenta win32
     echo "win64"
 }
 
@@ -295,48 +255,51 @@ detectar_arquitetura_exe() {
 # ============================================================================
 exibir_logo
 
-# Forçar reinstalação se houver erro anterior
 if ! validar_wine_instalacao; then
     instalar_wine
 fi
 
-# Definir Wine binary (preferir wine64, fallback para wine)
-if [ -f "$WINE_BIN_64" ]; then
-    WINE_BIN="$WINE_BIN_64"
-    WINE_ARCH_DEFAULT="win64"
-elif [ -f "$WINE_BIN_32" ]; then
-    WINE_BIN="$WINE_BIN_32"
-    WINE_ARCH_DEFAULT="win32"
+# Buscar wine64 ou wine
+if [ -f "$INSTALL_DIR/bin/wine64" ]; then
+    WINE_BIN="$INSTALL_DIR/bin/wine64"
+elif [ -f "$INSTALL_DIR/bin/wine" ]; then
+    WINE_BIN="$INSTALL_DIR/bin/wine"
 else
-    erro "Wine binary não encontrado!"
+    # Tentar encontrar em proton (Proton é um wrapper)
+    if [ -f "$INSTALL_DIR/proton" ]; then
+        info "Usando Proton (wrapper)"
+        WINE_BIN="$INSTALL_DIR/proton"
+    else
+        erro "Wine/Proton binary não encontrado!"
+    fi
 fi
 
 chmod +x "$WINE_BIN" 2>/dev/null || true
 
-ok "Wine 64-bit: $([ -f "$WINE_BIN_64" ] && echo "$WINE_BIN_64 ✓" || echo "não encontrado")"
-ok "Wine 32-bit: $([ -f "$WINE_BIN_32" ] && echo "$WINE_BIN_32 ✓" || echo "não encontrado")"
-ok "Versão: $("$WINE_BIN" --version 2>/dev/null || echo 'desconhecida')"
+ok "Wine/Proton: $WINE_BIN"
+if [ -x "$WINE_BIN" ]; then
+    WINE_VERSION=$("$WINE_BIN" --version 2>/dev/null || echo "Proton (versão desconhecida)")
+else
+    WINE_VERSION="Proton (versão desconhecida)"
+fi
+ok "Versão: $WINE_VERSION"
 
 # ============================================================================
-# VARIÁVEIS DE AMBIENTE - Suporte wow64 (ambas arquiteturas)
+# VARIÁVEIS DE AMBIENTE
 # ============================================================================
 
-# Ordem CORRETA: lib64 ANTES de lib (lib64 para 64-bit, lib para 32-bit)
 export LD_LIBRARY_PATH="$INSTALL_DIR/lib64:$INSTALL_DIR/lib32:$INSTALL_DIR/lib:${LD_LIBRARY_PATH:-}"
 export PATH="$INSTALL_DIR/bin:$PATH"
 
-# Garante que Wine use seus próprios binários
 export WINELOADER="$WINE_BIN"
 export WINESERVER="$INSTALL_DIR/bin/wineserver"
+export PROTON_USE_WINED3D=1
 
-# DirectX / Gráficos
+# DXVK está integrado no Proton
 export DXVK_HUD=off
 export STAGING_SHARED_MEMORY=1
-
-# Sobrescrita de DLLs - usar nativas para máxima compatibilidade
 export WINEDLLOVERRIDES="winemenubuilder=d;rpcss=n;midimap=n"
 
-# Detecção de Display (X11 vs Wayland)
 if [ "$XDG_SESSION_TYPE" = "wayland" ]; then
     aviso "Detectado Wayland - pode ter incompatibilidades"
     export GDK_BACKEND=x11
@@ -347,26 +310,16 @@ if [ -z "$DISPLAY" ]; then
     export DISPLAY=:0
 fi
 
-info "Modo: BALANCEADO (DirectX/DXVK padrão)"
-info "LD_LIBRARY_PATH: lib64:lib32:lib"
+info "Modo: ALTO DESEMPENHO (Proton + DXVK integrado)"
 
 # Áudio
-configurar_audio() {
-    if command -v pactl >/dev/null 2>&1 && pactl info >/dev/null 2>&1; then
-        ok "Audio: PulseAudio detectado"
-        return 0
-    fi
-
-    if [ -S "${XDG_RUNTIME_DIR}/pipewire-0" ] 2>/dev/null; then
-        ok "Audio: PipeWire detectado"
-        return 0
-    fi
-
+if command -v pactl >/dev/null 2>&1 && pactl info >/dev/null 2>&1; then
+    ok "Audio: PulseAudio detectado"
+elif [ -S "${XDG_RUNTIME_DIR}/pipewire-0" ] 2>/dev/null; then
+    ok "Audio: PipeWire detectado"
+else
     aviso "Audio: Usando configuração padrão"
-    return 0
-}
-
-configurar_audio
+fi
 
 echo ""
 echo "Procurando jogos em múltiplos locais..."
@@ -392,7 +345,6 @@ for search_path in "${SEARCH_PATHS[@]}"; do
     fi
 done
 
-# Remover duplicatas
 declare -a UNIQUE_EXES
 declare -A SEEN_EXES
 for exe in "${EXES[@]}"; do
@@ -439,28 +391,23 @@ fi
 [ -z "$SELECTED" ] && erro "Nenhum arquivo selecionado."
 [ ! -f "$SELECTED" ] && erro "Arquivo não encontrado: '$SELECTED'"
 
-# Detectar arquitetura do executável
 DETECTED_ARCH=$(detectar_arquitetura_exe "$SELECTED")
 WINE_ARCH="$DETECTED_ARCH"
 
 info "Arquitetura detectada: $WINE_ARCH"
 
-# Prefix por jogo
 GAME_NAME="$(basename "$SELECTED" .exe | tr -cd '[:alnum:]_-')"
 export WINEPREFIX="$WINE67_DIR/prefixes/$GAME_NAME"
 mkdir -p "$WINEPREFIX"
 
-# Inicializar prefix Wine com arquitetura correta
 if [ ! -f "$WINEPREFIX/system.reg" ]; then
     info "Inicializando Wine prefix ($WINE_ARCH) para $GAME_NAME..."
     
-    # Inicializar com wineboot na arquitetura correta
     WINEARCH="$WINE_ARCH" WINEPREFIX="$WINEPREFIX" "$WINE_BIN" wineboot -i 2>&1 | tail -3 &
     local boot_pid=$!
     spinner "$boot_pid" "Criando estrutura Windows ($WINE_ARCH)..."
-    wait "$boot_pid"
+    wait "$boot_pid" || true
     
-    # Verificar sucesso
     if [ ! -f "$WINEPREFIX/system.reg" ]; then
         aviso "Tentando método alternativo..."
         WINEARCH="$WINE_ARCH" WINEPREFIX="$WINEPREFIX" "$WINE_BIN" wineboot -u 2>&1 | tail -3
@@ -474,12 +421,11 @@ echo -e "${GREEN}╔════════════════════
 echo -e "${GREEN}║ 🎮 Jogo: $(basename "$SELECTED")${RESET}"
 echo -e "${GREEN}║ 🔧 Arquitetura: ${BOLD}$WINE_ARCH${RESET}${GREEN}${RESET}"
 echo -e "${GREEN}║ 📊 Compatibilidade: $COMPAT_LEVEL${RESET}"
+echo -e "${GREEN}║ 🚀 Motor: Proton-GE 9.0 (DXVK integrado)${RESET}"
 echo -e "${GREEN}║ 📁 Prefix: $GAME_NAME${RESET}"
-echo -e "${GREEN}║ 📚 Libs: 64+32-bit (lib64:lib32:lib)${RESET}"
 echo -e "${GREEN}╚═════════════════════════════════════════════╝${RESET}"
 echo ""
 
-# EXECUTAR JOGO com arquitetura detectada
 WINEARCH="$WINE_ARCH" WINEPREFIX="$WINEPREFIX" "$WINE_BIN" "$SELECTED"
 
 EXIT=$?
@@ -488,9 +434,4 @@ if [ $EXIT -eq 0 ]; then
     ok "Jogo encerrado normalmente."
 else
     echo -e "${YELLOW}⚠  Código de saída: $EXIT${RESET}"
-    if [ $EXIT -eq 53 ]; then
-        echo -e "${YELLOW}   (Erro C0000135 = kernel32.dll não carregada)${RESET}"
-        echo -e "${YELLOW}   Execute: rm -rf ~/Desktop/Wine67/wine${RESET}"
-        echo -e "${YELLOW}   E execute o script novamente${RESET}"
-    fi
 fi
