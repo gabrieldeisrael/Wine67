@@ -61,7 +61,7 @@ exibir_logo() {
     echo -e "${MAGENTA}${BOLD}"
     echo "  ██╗    ██╗██╗███╗   ██╗███████╗ ██████╗ ███████╗"
     echo "  ██║    ██║██║████╗  ██║██╔════╝██╔════╝ ╚════██║"
-    echo "  ██║ █╗ ██║██║██╔██╗ ██║███��█╗  ███████╗     ██╔╝"
+    echo "  ██║ █╗ ██║██║██╔██╗ ██║█████╗  ███████╗     ██╔╝"
     echo "  ██║███╗██║██║██║╚██╗██║██╔══╝  ██╔═══██╗   ██╔╝ "
     echo "  ╚███╔███╔╝██║██║ ╚████║███████╗╚██████╔╝   ██║  "
     echo "   ╚══╝╚══╝ ╚═╝╚═╝  ╚═══╝╚══════╝ ╚═════╝    ╚═╝  "
@@ -120,18 +120,14 @@ validar_wine_instalacao() {
         return 1
     fi
     
-    # CRÍTICO: Verificar DLLs nativas (kernel32.dll.so) para ambas arquiteturas
-    if [ ! -f "$INSTALL_DIR/lib/wine/kernel32.dll.so" ] && \
-       [ ! -f "$INSTALL_DIR/lib64/wine/kernel32.dll.so" ]; then
-        return 1
+    # CRÍTICO: Verificar DLLs nativas - procurar em qualquer lugar
+    local has_kernel32=0
+    if find "$INSTALL_DIR" -name "kernel32.dll.so" 2>/dev/null | grep -q .; then
+        has_kernel32=1
     fi
     
-    # Verificar se há lib32/wine (para suporte 32-bit)
-    if [ ! -d "$INSTALL_DIR/lib32/wine" ] 2>/dev/null; then
-        # Se não tem lib32, pelo menos lib/wine deve existir
-        if [ ! -d "$INSTALL_DIR/lib/wine" ] && [ ! -d "$INSTALL_DIR/lib64/wine" ]; then
-            return 1
-        fi
+    if [ $has_kernel32 -eq 0 ]; then
+        return 1
     fi
     
     return 0
@@ -144,27 +140,25 @@ diagnosticar_estrutura() {
     ls -1 "$INSTALL_DIR" 2>/dev/null | sed 's/^/    /' || echo "    [vazio]"
     echo ""
     
-    echo "  🔍 Verificando kernel32.dll.so (64-bit):"
-    if find "$INSTALL_DIR/lib64/wine" -name "kernel32.dll.so" 2>/dev/null | head -1 | sed 's/^/    /'; then
-        :
+    echo "  🔍 Procurando kernel32.dll.so em qualquer lugar:"
+    local found=$(find "$INSTALL_DIR" -name "kernel32.dll.so" -type f 2>/dev/null | head -3)
+    if [ -n "$found" ]; then
+        echo "$found" | sed 's/^/    /'
     else
-        echo "    ❌ NÃO ENCONTRADO em lib64"
-    fi
-    
-    echo "  🔍 Verificando kernel32.dll.so (32-bit):"
-    if find "$INSTALL_DIR/lib/wine" -name "kernel32.dll.so" 2>/dev/null | head -1 | sed 's/^/    /'; then
-        :
-    else
-        echo "    ⚠️  NÃO ENCONTRADO em lib (opcional para 32-bit)"
+        echo "    ❌ NÃO ENCONTRADO! Wine pode estar corrompido."
     fi
     echo ""
     
-    echo "  📚 Estrutura lib/lib32/lib64:"
-    ls -lad "$INSTALL_DIR"/lib* 2>/dev/null | sed 's/^/    /' || echo "    ❌ Diretórios não encontrados"
+    echo "  📚 Todos os diretórios lib:"
+    find "$INSTALL_DIR" -maxdepth 2 -type d -name "lib*" 2>/dev/null | sed 's/^/    /'
     echo ""
     
-    echo "  🔧 Verificando wine/wine64:"
-    ls -lah "$INSTALL_DIR"/bin/wine* 2>/dev/null | sed 's/^/    /' || echo "    ❌ Binários não encontrados"
+    echo "  🔧 Binários Wine:"
+    ls -lah "$INSTALL_DIR"/bin/wine* 2>/dev/null | sed 's/^/    /' || echo "    ❌ Não encontrados"
+    echo ""
+    
+    echo "  📦 Conteúdo de lib (se existir):"
+    find "$INSTALL_DIR/lib" -maxdepth 2 -type d 2>/dev/null | head -10 | sed 's/^/    /'
     echo ""
 }
 
@@ -183,7 +177,15 @@ instalar_wine() {
         ok "Arquivo encontrado: $GE_TAR"
     else
         GE_TAR="$INSTALL_DIR/wine-kron4ek.tar.xz"
+        info "Baixando Wine (este é um arquivo grande, pode demorar)..."
         baixar "$WINE_URL" "$GE_TAR" "Wine-Kron4ek wow64"
+    fi
+
+    # Verificar tamanho do arquivo
+    local TAR_SIZE=$(stat -f%z "$GE_TAR" 2>/dev/null || stat -c%s "$GE_TAR" 2>/dev/null)
+    if [ "$TAR_SIZE" -lt 50000000 ]; then
+        aviso "⚠️  Arquivo Wine parece pequeno demais ($TAR_SIZE bytes)"
+        aviso "Pode estar incompleto. Tentando de qualquer forma..."
     fi
 
     # Determinar flags de tar
@@ -197,7 +199,7 @@ instalar_wine() {
     info "Verificando integridade do arquivo..."
     if ! tar "$TEST_FLAG" "$GE_TAR" >/dev/null 2>&1; then
         rm -f "$GE_TAR"
-        erro "Arquivo corrompido ou inválido."
+        erro "Arquivo corrompido ou inválido. Download será refeito na próxima execução."
     fi
     ok "Arquivo verificado."
 
@@ -207,11 +209,13 @@ instalar_wine() {
     rm -rf "$INSTALL_DIR/temp_extract"
     mkdir -p "$INSTALL_DIR/temp_extract"
     
-    # Extrair arquivo
-    tar "$TAR_FLAG" "$GE_TAR" -C "$INSTALL_DIR/temp_extract" 2>/dev/null &
+    # Extrair arquivo SEM redirecionamento de erro
+    tar "$TAR_FLAG" "$GE_TAR" -C "$INSTALL_DIR/temp_extract" &
     local tar_pid=$!
-    spinner "$tar_pid" "Extraindo Wine..."
-    wait "$tar_pid" || erro "Falha ao extrair Wine."
+    spinner "$tar_pid" "Extraindo Wine (verifique espaço em disco)..."
+    wait "$tar_pid" || {
+        aviso "Extração completada (pode estar parcial)"
+    }
     
     # Reorganizar estrutura
     info "Reorganizando estrutura..."
@@ -221,9 +225,11 @@ instalar_wine() {
     
     if [ -n "$top_dir" ] && [ "$(ls "$top_dir" 2>/dev/null | wc -l)" -gt 0 ]; then
         # Mover conteúdo do diretório top-level
+        info "Movendo conteúdo de $(basename "$top_dir")..."
         mv "$top_dir"/* "$INSTALL_DIR/" 2>/dev/null || true
     else
         # Mover arquivos soltos
+        info "Movendo arquivos soltos..."
         mv "$INSTALL_DIR/temp_extract"/* "$INSTALL_DIR/" 2>/dev/null || true
     fi
     
@@ -232,13 +238,30 @@ instalar_wine() {
     
     # Definir permissões
     info "Configurando permissões..."
-    find "$INSTALL_DIR" -type f -executable 2>/dev/null | while read f; do chmod +x "$f" 2>/dev/null; done
-    find "$INSTALL_DIR" -type f -name "*.so*" 2>/dev/null | while read f; do chmod +x "$f" 2>/dev/null; done
+    find "$INSTALL_DIR" -type f \( -executable -o -name "*.so*" \) 2>/dev/null | while read f; do 
+        chmod +x "$f" 2>/dev/null || true
+    done
 
     # Validação CRÍTICA
     if ! validar_wine_instalacao; then
         diagnosticar_estrutura
-        erro "FALHA: kernel32.dll.so não encontrado! Arquivo Wine incompleto."
+        
+        # Oferecer alternativas
+        echo ""
+        aviso "FALHA na instalação: kernel32.dll.so não encontrado!"
+        echo ""
+        echo "Possíveis causas:"
+        echo "  1. Download incompleto (arquivo muito pequeno)"
+        echo "  2. Sem espaço em disco"
+        echo "  3. Arquivo Wine corrompido no servidor"
+        echo ""
+        echo "Soluções:"
+        echo "  - Tente novamente (será refeito o download)"
+        echo "  - Verifique espaço em disco: df -h"
+        echo "  - Tente outro source do Wine"
+        echo ""
+        
+        exit 1
     fi
 
     ok "Wine wow64 (64+32 bits) instalado com sucesso!"
@@ -290,8 +313,8 @@ fi
 
 chmod +x "$WINE_BIN" 2>/dev/null || true
 
-ok "Wine 64-bit: $WINE_BIN_64 $([ -f "$WINE_BIN_64" ] && echo '✓' || echo '✗')"
-ok "Wine 32-bit: $WINE_BIN_32 $([ -f "$WINE_BIN_32" ] && echo '✓' || echo '✗')"
+ok "Wine 64-bit: $([ -f "$WINE_BIN_64" ] && echo "$WINE_BIN_64 ✓" || echo "não encontrado")"
+ok "Wine 32-bit: $([ -f "$WINE_BIN_32" ] && echo "$WINE_BIN_32 ✓" || echo "não encontrado")"
 ok "Versão: $("$WINE_BIN" --version 2>/dev/null || echo 'desconhecida')"
 
 # ============================================================================
