@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -e  # Parar em qualquer erro
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # detecta desktop em português ou inglês
@@ -17,7 +19,8 @@ WINE67_DIR="$DESKTOP/Wine67"
 mkdir -p "$WINE67_DIR"
 
 INSTALL_DIR="$WINE67_DIR/wine"
-WINE_BIN="$INSTALL_DIR/bin/wine64"
+WINE_BIN_64="$INSTALL_DIR/bin/wine64"
+WINE_BIN_32="$INSTALL_DIR/bin/wine"
 WINE_URL="https://github.com/Kron4ek/Wine-Builds/releases/download/11.8/wine-11.8-amd64-wow64.tar.xz"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
@@ -32,7 +35,7 @@ XDG_SESSION_TYPE="${XDG_SESSION_TYPE:-x11}"
 DEBUG_MODE=0
 COMPAT_LEVEL="medium"
 USE_DXVK=1
-DXVK_HUD=""
+WINE_ARCH="win64"  # Pode ser "win32" ou "win64"
 
 erro()  { echo -e "${RED}❌ $1${RESET}"; exit 1; }
 ok()    { echo -e "${GREEN}✔  $1${RESET}"; }
@@ -58,12 +61,13 @@ exibir_logo() {
     echo -e "${MAGENTA}${BOLD}"
     echo "  ██╗    ██╗██╗███╗   ██╗███████╗ ██████╗ ███████╗"
     echo "  ██║    ██║██║████╗  ██║██╔════╝██╔════╝ ╚════██║"
-    echo "  ██║ █╗ ██║██║██╔██╗ ██║█████╗  ███████╗     █��╔╝"
+    echo "  ██║ █╗ ██║██║██╔██╗ ██║███��█╗  ███████╗     ██╔╝"
     echo "  ██║███╗██║██║██║╚██╗██║██╔══╝  ██╔═══██╗   ██╔╝ "
     echo "  ╚███╔███╔╝██║██║ ╚████║███████╗╚██████╔╝   ██║  "
     echo "   ╚══╝╚══╝ ╚═╝╚═╝  ╚═══╝╚══════╝ ╚═════╝    ╚═╝  "
     echo -e "${RESET}"
     echo -e "  ${DIM}Wine-Kron4ek wow64 Portable Launcher — sem sudo${RESET}"
+    echo -e "  ${DIM}Suporte: 64-bit (win64) e 32-bit (win32)${RESET}"
     echo -e "  ${DIM}Base: $WINE67_DIR${RESET}"
     echo -e "  ${DIM}Desktop: $DESKTOP_SESSION | Sessão: $XDG_SESSION_TYPE${RESET}"
     echo ""
@@ -111,52 +115,65 @@ buscar_tar() {
 }
 
 validar_wine_instalacao() {
-    # Verificar wine64 executável (preferido) ou wine
-    local wine_found=0
-    if [ -f "$INSTALL_DIR/bin/wine64" ] || [ -f "$INSTALL_DIR/bin/wine" ]; then
-        wine_found=1
-    fi
-    
-    if [ $wine_found -eq 0 ]; then
+    # Verificar se Wine64 e Wine32 estão instalados (wow64 = ambos)
+    if [ ! -f "$WINE_BIN_64" ] && [ ! -f "$WINE_BIN_32" ]; then
         return 1
     fi
     
-    # Verificar lib64/wine ou lib/wine (kernel32)
-    if [ -f "$INSTALL_DIR/lib64/wine/kernel32.dll.so" ] || \
-       [ -f "$INSTALL_DIR/lib/wine/kernel32.dll.so" ]; then
-        return 0
+    # CRÍTICO: Verificar DLLs nativas (kernel32.dll.so) para ambas arquiteturas
+    if [ ! -f "$INSTALL_DIR/lib/wine/kernel32.dll.so" ] && \
+       [ ! -f "$INSTALL_DIR/lib64/wine/kernel32.dll.so" ]; then
+        return 1
     fi
     
-    # Fallback: apenas verificar se tem estrutura wine mínima
-    if [ -d "$INSTALL_DIR/lib/wine" ] || [ -d "$INSTALL_DIR/lib64/wine" ]; then
-        return 0
+    # Verificar se há lib32/wine (para suporte 32-bit)
+    if [ ! -d "$INSTALL_DIR/lib32/wine" ] 2>/dev/null; then
+        # Se não tem lib32, pelo menos lib/wine deve existir
+        if [ ! -d "$INSTALL_DIR/lib/wine" ] && [ ! -d "$INSTALL_DIR/lib64/wine" ]; then
+            return 1
+        fi
     fi
     
-    return 1
+    return 0
 }
 
 diagnosticar_estrutura() {
     info "Diagnosticando estrutura extraída..."
-    echo "  Conteúdo de $INSTALL_DIR:"
-    find "$INSTALL_DIR" -maxdepth 3 -type f 2>/dev/null | head -20 | sed 's/^/    /'
+    echo ""
+    echo "  📁 Conteúdo de $INSTALL_DIR (top-level):"
+    ls -1 "$INSTALL_DIR" 2>/dev/null | sed 's/^/    /' || echo "    [vazio]"
     echo ""
     
-    # Verificação específica de kernel32
-    echo "  Verificando kernel32.dll.so:"
-    find "$INSTALL_DIR" -name "kernel32.dll.so" -o -name "kernel32*" 2>/dev/null | sed 's/^/    /'
+    echo "  🔍 Verificando kernel32.dll.so (64-bit):"
+    if find "$INSTALL_DIR/lib64/wine" -name "kernel32.dll.so" 2>/dev/null | head -1 | sed 's/^/    /'; then
+        :
+    else
+        echo "    ❌ NÃO ENCONTRADO em lib64"
+    fi
+    
+    echo "  🔍 Verificando kernel32.dll.so (32-bit):"
+    if find "$INSTALL_DIR/lib/wine" -name "kernel32.dll.so" 2>/dev/null | head -1 | sed 's/^/    /'; then
+        :
+    else
+        echo "    ⚠️  NÃO ENCONTRADO em lib (opcional para 32-bit)"
+    fi
     echo ""
     
-    echo "  Verificando estrutura lib/lib64:"
-    ls -lad "$INSTALL_DIR"/lib* 2>/dev/null | sed 's/^/    /'
+    echo "  📚 Estrutura lib/lib32/lib64:"
+    ls -lad "$INSTALL_DIR"/lib* 2>/dev/null | sed 's/^/    /' || echo "    ❌ Diretórios não encontrados"
+    echo ""
+    
+    echo "  🔧 Verificando wine/wine64:"
+    ls -lah "$INSTALL_DIR"/bin/wine* 2>/dev/null | sed 's/^/    /' || echo "    ❌ Binários não encontrados"
     echo ""
 }
 
 instalar_wine() {
-    info "Instalando Wine Kron4ek wow64..."
+    info "Instalando Wine Kron4ek wow64 (64-bit + 32-bit)..."
     
-    # Limpar instalação anterior se incompleta
-    if [ -d "$INSTALL_DIR" ] && ! validar_wine_instalacao; then
-        aviso "Instalação anterior incompleta detectada. Limpando..."
+    # Limpar instalação anterior COMPLETAMENTE
+    if [ -d "$INSTALL_DIR" ]; then
+        aviso "Removendo instalação anterior..."
         rm -rf "$INSTALL_DIR"
         mkdir -p "$INSTALL_DIR"
     fi
@@ -169,7 +186,7 @@ instalar_wine() {
         baixar "$WINE_URL" "$GE_TAR" "Wine-Kron4ek wow64"
     fi
 
-    # Determinar flags de tar baseado na extensão
+    # Determinar flags de tar
     local TAR_FLAG TEST_FLAG
     case "$GE_TAR" in
         *.tar.xz) TAR_FLAG="-xJf"; TEST_FLAG="-tJf" ;;
@@ -186,75 +203,115 @@ instalar_wine() {
 
     info "Extraindo Wine (pode demorar alguns minutos)..."
     
-    # Criar diretório temporário para extração
-    local TEMP_EXTRACT="$INSTALL_DIR/temp_extract"
-    mkdir -p "$TEMP_EXTRACT"
+    # Limpar temporário se existir
+    rm -rf "$INSTALL_DIR/temp_extract"
+    mkdir -p "$INSTALL_DIR/temp_extract"
     
-    # Extrair
-    tar "$TAR_FLAG" "$GE_TAR" -C "$TEMP_EXTRACT" 2>/dev/null &
+    # Extrair arquivo
+    tar "$TAR_FLAG" "$GE_TAR" -C "$INSTALL_DIR/temp_extract" 2>/dev/null &
     local tar_pid=$!
     spinner "$tar_pid" "Extraindo Wine..."
     wait "$tar_pid" || erro "Falha ao extrair Wine."
     
-    # Inspecionar e reorganizar estrutura
+    # Reorganizar estrutura
     info "Reorganizando estrutura..."
     
-    # Verificar se há diretório top-level (wine/, wine-11.8, etc)
-    local top_dir=$(find "$TEMP_EXTRACT" -maxdepth 1 -mindepth 1 -type d | head -1)
+    # Verificar o que foi extraído
+    local top_dir=$(find "$INSTALL_DIR/temp_extract" -maxdepth 1 -mindepth 1 -type d | head -1)
     
-    if [ -n "$top_dir" ] && [ -d "$top_dir" ]; then
-        # Mover conteúdo do diretório top-level para INSTALL_DIR
+    if [ -n "$top_dir" ] && [ "$(ls "$top_dir" 2>/dev/null | wc -l)" -gt 0 ]; then
+        # Mover conteúdo do diretório top-level
         mv "$top_dir"/* "$INSTALL_DIR/" 2>/dev/null || true
     else
-        # Mover tudo que foi extraído
-        mv "$TEMP_EXTRACT"/* "$INSTALL_DIR/" 2>/dev/null || true
+        # Mover arquivos soltos
+        mv "$INSTALL_DIR/temp_extract"/* "$INSTALL_DIR/" 2>/dev/null || true
     fi
     
     # Limpar temporário
-    rm -rf "$TEMP_EXTRACT"
+    rm -rf "$INSTALL_DIR/temp_extract"
     
-    # Definir permissões de execução
+    # Definir permissões
     info "Configurando permissões..."
-    [ -d "$INSTALL_DIR/bin" ] && find "$INSTALL_DIR/bin" -type f -exec chmod +x {} \; 2>/dev/null
-    [ -d "$INSTALL_DIR/lib" ] && find "$INSTALL_DIR/lib" -type f -name "*.so*" -exec chmod +x {} \; 2>/dev/null
-    [ -d "$INSTALL_DIR/lib64" ] && find "$INSTALL_DIR/lib64" -type f -name "*.so*" -exec chmod +x {} \; 2>/dev/null
+    find "$INSTALL_DIR" -type f -executable 2>/dev/null | while read f; do chmod +x "$f" 2>/dev/null; done
+    find "$INSTALL_DIR" -type f -name "*.so*" 2>/dev/null | while read f; do chmod +x "$f" 2>/dev/null; done
 
-    # Validar instalação
+    # Validação CRÍTICA
     if ! validar_wine_instalacao; then
         diagnosticar_estrutura
-        rm -rf "$INSTALL_DIR"
-        mkdir -p "$INSTALL_DIR"
-        erro "Instalação incompleta: componentes críticos não encontrados."
+        erro "FALHA: kernel32.dll.so não encontrado! Arquivo Wine incompleto."
     fi
 
-    ok "Wine instalado e validado com sucesso!"
+    ok "Wine wow64 (64+32 bits) instalado com sucesso!"
 }
 
-# Início do script
+# ============================================================================
+# DETECTAR ARQUITETURA DO EXECUTÁVEL
+# ============================================================================
+detectar_arquitetura_exe() {
+    local exe="$1"
+    
+    # Usar 'file' para detectar se é 32 ou 64 bits
+    if command -v file >/dev/null 2>&1; then
+        local file_info=$(file "$exe" 2>/dev/null)
+        
+        if echo "$file_info" | grep -qi "x86-64\|x86_64\|64-bit"; then
+            echo "win64"
+            return 0
+        elif echo "$file_info" | grep -qi "Intel 80386\|32-bit\|PE32\s"; then
+            echo "win32"
+            return 0
+        fi
+    fi
+    
+    # Fallback: tentar executar com win64, se falhar tenta win32
+    echo "win64"
+}
+
+# ============================================================================
+# INÍCIO DO SCRIPT
+# ============================================================================
 exibir_logo
 
-if [ ! -f "$WINE_BIN" ] || ! validar_wine_instalacao; then
+# Forçar reinstalação se houver erro anterior
+if ! validar_wine_instalacao; then
     instalar_wine
 fi
 
-# Usar wine64 se disponível, caso contrário usar wine
-if [ ! -f "$WINE_BIN" ] && [ -f "$INSTALL_DIR/bin/wine" ]; then
-    WINE_BIN="$INSTALL_DIR/bin/wine"
+# Definir Wine binary (preferir wine64, fallback para wine)
+if [ -f "$WINE_BIN_64" ]; then
+    WINE_BIN="$WINE_BIN_64"
+    WINE_ARCH_DEFAULT="win64"
+elif [ -f "$WINE_BIN_32" ]; then
+    WINE_BIN="$WINE_BIN_32"
+    WINE_ARCH_DEFAULT="win32"
+else
+    erro "Wine binary não encontrado!"
 fi
 
-[ ! -x "$WINE_BIN" ] && chmod +x "$WINE_BIN"
+chmod +x "$WINE_BIN" 2>/dev/null || true
 
-ok "Wine: $WINE_BIN"
+ok "Wine 64-bit: $WINE_BIN_64 $([ -f "$WINE_BIN_64" ] && echo '✓' || echo '✗')"
+ok "Wine 32-bit: $WINE_BIN_32 $([ -f "$WINE_BIN_32" ] && echo '✓' || echo '✗')"
 ok "Versão: $("$WINE_BIN" --version 2>/dev/null || echo 'desconhecida')"
 
-# Configuração do ambiente do wine - CRÍTICA PARA CARREGAR DLLs
-export LD_LIBRARY_PATH="$INSTALL_DIR/lib64:$INSTALL_DIR/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+# ============================================================================
+# VARIÁVEIS DE AMBIENTE - Suporte wow64 (ambas arquiteturas)
+# ============================================================================
+
+# Ordem CORRETA: lib64 ANTES de lib (lib64 para 64-bit, lib para 32-bit)
+export LD_LIBRARY_PATH="$INSTALL_DIR/lib64:$INSTALL_DIR/lib32:$INSTALL_DIR/lib:${LD_LIBRARY_PATH:-}"
 export PATH="$INSTALL_DIR/bin:$PATH"
 
-# Garantir que Wine encontre suas próprias bibliotecas
-export WINEARCH=win64
-export WINESERVER="$INSTALL_DIR/bin/wineserver"
+# Garante que Wine use seus próprios binários
 export WINELOADER="$WINE_BIN"
+export WINESERVER="$INSTALL_DIR/bin/wineserver"
+
+# DirectX / Gráficos
+export DXVK_HUD=off
+export STAGING_SHARED_MEMORY=1
+
+# Sobrescrita de DLLs - usar nativas para máxima compatibilidade
+export WINEDLLOVERRIDES="winemenubuilder=d;rpcss=n;midimap=n"
 
 # Detecção de Display (X11 vs Wayland)
 if [ "$XDG_SESSION_TYPE" = "wayland" ]; then
@@ -267,39 +324,21 @@ if [ -z "$DISPLAY" ]; then
     export DISPLAY=:0
 fi
 
-# Configurações base do Wine
-export WINEARCH=win64
-export WINE_CPU_TOPOLOGY=4:2
-export WINEDLLOVERRIDES="winemenubuilder=d;rpcss=n;midimap=n;mscoree=n;mshtml=n"
-export STAGING_SHARED_MEMORY=1
-
-# Forçar DXVK para melhor compatibilidade
-export DXVK_HUD=""
-export PROTON_USE_WINED3D=1
-
 info "Modo: BALANCEADO (DirectX/DXVK padrão)"
+info "LD_LIBRARY_PATH: lib64:lib32:lib"
 
-# Áudio: Detecção melhorada (PipeWire/PulseAudio)
+# Áudio
 configurar_audio() {
-    # Verificar PulseAudio
     if command -v pactl >/dev/null 2>&1 && pactl info >/dev/null 2>&1; then
-        local PULSE_SOCKET
-        PULSE_SOCKET=$(pactl info 2>/dev/null | grep 'Server String' | awk '{print $3}')
-        if [ -n "$PULSE_SOCKET" ]; then
-            export PULSE_SERVER="unix:$PULSE_SOCKET"
-            ok "Audio: PulseAudio detectado"
-            return 0
-        fi
+        ok "Audio: PulseAudio detectado"
+        return 0
     fi
 
-    # Verificar PipeWire
     if [ -S "${XDG_RUNTIME_DIR}/pipewire-0" ] 2>/dev/null; then
-        export PIPEWIRE_RUNTIME_DIR="$XDG_RUNTIME_DIR"
         ok "Audio: PipeWire detectado"
         return 0
     fi
 
-    # Fallback: usar valores padrão
     aviso "Audio: Usando configuração padrão"
     return 0
 }
@@ -309,7 +348,6 @@ configurar_audio
 echo ""
 echo "Procurando jogos em múltiplos locais..."
 
-# Procurar em vários locais: Home, Downloads, Wine67, /media, /mnt
 info "Escaneando diretórios..."
 
 declare -a EXES
@@ -323,7 +361,6 @@ declare -a SEARCH_PATHS=(
     "$SCRIPT_DIR"
 )
 
-# Procurar .exe em todos os caminhos
 for search_path in "${SEARCH_PATHS[@]}"; do
     if [ -d "$search_path" ]; then
         while IFS= read -r exe_file; do
@@ -332,7 +369,7 @@ for search_path in "${SEARCH_PATHS[@]}"; do
     fi
 done
 
-# Remover duplicatas mantendo a ordem
+# Remover duplicatas
 declare -a UNIQUE_EXES
 declare -A SEEN_EXES
 for exe in "${EXES[@]}"; do
@@ -342,7 +379,6 @@ for exe in "${EXES[@]}"; do
     fi
 done
 
-# Ordenar
 IFS=$'\n' UNIQUE_EXES=($(sort <<<"${UNIQUE_EXES[*]}"))
 
 if [ ${#UNIQUE_EXES[@]} -eq 0 ]; then
@@ -380,51 +416,58 @@ fi
 [ -z "$SELECTED" ] && erro "Nenhum arquivo selecionado."
 [ ! -f "$SELECTED" ] && erro "Arquivo não encontrado: '$SELECTED'"
 
+# Detectar arquitetura do executável
+DETECTED_ARCH=$(detectar_arquitetura_exe "$SELECTED")
+WINE_ARCH="$DETECTED_ARCH"
+
+info "Arquitetura detectada: $WINE_ARCH"
+
 # Prefix por jogo
 GAME_NAME="$(basename "$SELECTED" .exe | tr -cd '[:alnum:]_-')"
 export WINEPREFIX="$WINE67_DIR/prefixes/$GAME_NAME"
 mkdir -p "$WINEPREFIX"
 
-# Inicializar prefix Wine (criar estrutura Windows)
+# Inicializar prefix Wine com arquitetura correta
 if [ ! -f "$WINEPREFIX/system.reg" ]; then
-    info "Inicializando Wine prefix..."
+    info "Inicializando Wine prefix ($WINE_ARCH) para $GAME_NAME..."
     
-    # Usar wineboot -i para inicializar corretamente
-    WINEARCH=win64 WINEPREFIX="$WINEPREFIX" "$WINE_BIN" wineboot -i 2>&1 | tail -10 &
+    # Inicializar com wineboot na arquitetura correta
+    WINEARCH="$WINE_ARCH" WINEPREFIX="$WINEPREFIX" "$WINE_BIN" wineboot -i 2>&1 | tail -3 &
     local boot_pid=$!
-    spinner "$boot_pid" "Criando estrutura Windows..."
+    spinner "$boot_pid" "Criando estrutura Windows ($WINE_ARCH)..."
     wait "$boot_pid"
     
-    # Verificar inicialização
+    # Verificar sucesso
     if [ ! -f "$WINEPREFIX/system.reg" ]; then
-        aviso "Tentando inicialização alternativa..."
-        WINEARCH=win64 WINEPREFIX="$WINEPREFIX" "$WINE_BIN" wineboot -u 2>&1 | tail -5
+        aviso "Tentando método alternativo..."
+        WINEARCH="$WINE_ARCH" WINEPREFIX="$WINEPREFIX" "$WINE_BIN" wineboot -u 2>&1 | tail -3
     fi
     
-    ok "Prefix inicializado."
-    
-    # Instalar dependências de runtime
-    info "Instalando dependências de runtime..."
-    WINEARCH=win64 WINEPREFIX="$WINEPREFIX" "$WINE_BIN" cmd /c exit 2>/dev/null
-    ok "Dependências instaladas."
+    ok "Prefix inicializado ($WINE_ARCH)."
 fi
 
 echo ""
-echo -e "${GREEN}╔═══════════════════════════════════════╗${RESET}"
-echo -e "${GREEN}║ Iniciando: $(basename "$SELECTED")${RESET}"
-echo -e "${GREEN}║ Compatibilidade: ${BOLD}$COMPAT_LEVEL${RESET}${GREEN}${RESET}"
-echo -e "${GREEN}║ Prefix: $GAME_NAME${RESET}"
-echo -e "${GREEN}║ LD_LIBRARY_PATH: $INSTALL_DIR/lib*${RESET}"
-echo -e "${GREEN}╚═══════════════════════════════════════╝${RESET}"
+echo -e "${GREEN}╔═════════════════════════════════════════════╗${RESET}"
+echo -e "${GREEN}║ 🎮 Jogo: $(basename "$SELECTED")${RESET}"
+echo -e "${GREEN}║ 🔧 Arquitetura: ${BOLD}$WINE_ARCH${RESET}${GREEN}${RESET}"
+echo -e "${GREEN}║ 📊 Compatibilidade: $COMPAT_LEVEL${RESET}"
+echo -e "${GREEN}║ 📁 Prefix: $GAME_NAME${RESET}"
+echo -e "${GREEN}║ 📚 Libs: 64+32-bit (lib64:lib32:lib)${RESET}"
+echo -e "${GREEN}╚═════════════════════════════════════════════╝${RESET}"
 echo ""
 
-# Executar jogo com tratamento robusto
-WINEARCH=win64 WINEPREFIX="$WINEPREFIX" "$WINE_BIN" "$SELECTED"
+# EXECUTAR JOGO com arquitetura detectada
+WINEARCH="$WINE_ARCH" WINEPREFIX="$WINEPREFIX" "$WINE_BIN" "$SELECTED"
 
 EXIT=$?
 echo ""
 if [ $EXIT -eq 0 ]; then
-    ok "Encerrado normalmente."
+    ok "Jogo encerrado normalmente."
 else
-    echo -e "${YELLOW}⚠ Código de saída: $EXIT${RESET}"
+    echo -e "${YELLOW}⚠  Código de saída: $EXIT${RESET}"
+    if [ $EXIT -eq 53 ]; then
+        echo -e "${YELLOW}   (Erro C0000135 = kernel32.dll não carregada)${RESET}"
+        echo -e "${YELLOW}   Execute: rm -rf ~/Desktop/Wine67/wine${RESET}"
+        echo -e "${YELLOW}   E execute o script novamente${RESET}"
+    fi
 fi
