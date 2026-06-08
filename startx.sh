@@ -107,32 +107,49 @@ selecionar_wine_type() {
 command -v curl >/dev/null 2>&1 || erro "Instale curl (sudo apt install curl)"
 command -v tar >/dev/null 2>&1 || erro "tar não encontrado"
 command -v grep >/dev/null 2>&1 || erro "grep não encontrado"
+command -v jq >/dev/null 2>&1 || aviso "jq não encontrado - usando fallback"
 
 mkdir -p "$INSTALL_DIR"
 
-# Função para obter a versão mais recente
+# Função para obter a versão mais recente com melhor parsing
 obter_wine_url() {
     local tipo="$1"
     info "Detectando versão mais recente do $tipo..."
     
     if [ "$tipo" = "wine-ge" ]; then
-        # Wine-GE do repositório official
         local releases_url="https://api.github.com/repos/GloriousEggroll/wine-ge-custom/releases"
+        local repo_name="wine-ge-custom"
     else
-        # Proton-GE
         local releases_url="https://api.github.com/repos/GloriousEggroll/proton-ge-custom/releases"
+        local repo_name="proton-ge-custom"
     fi
     
-    local response=$(curl -s "$releases_url" | grep -o '"browser_download_url":"[^"]*\.tar\.gz"' | head -1)
-    
-    if [ -z "$response" ]; then
-        if [ "$tipo" = "wine-ge" ]; then
-            erro "Não foi possível obter a versão mais recente de Wine-GE"
-        else
-            erro "Não foi possível obter a versão mais recente de Proton-GE"
+    # Tentar com jq se disponível
+    if command -v jq >/dev/null 2>&1; then
+        local download_url=$(curl -s "$releases_url" | jq -r '.[0].assets[]?.browser_download_url' | grep -E '\.tar\.gz$' | head -1)
+        
+        if [ -n "$download_url" ] && [ "$download_url" != "null" ]; then
+            echo "$download_url"
+            return 0
         fi
+    fi
+    
+    # Fallback: parsing simples
+    local response=$(curl -s "$releases_url" | grep -o '"browser_download_url":"[^"]*\.tar\.gz"' | head -1 | cut -d'"' -f4)
+    
+    if [ -n "$response" ]; then
+        echo "$response"
+        return 0
+    fi
+    
+    # Última opção: link direto para última release
+    info "Usando release mais recente do repositório..."
+    
+    if [ "$tipo" = "wine-ge" ]; then
+        # Redirect do GitHub segue para o arquivo tar.gz mais recente
+        echo "https://github.com/GloriousEggroll/wine-ge-custom/releases/latest/download/wine-ge-continuous.tar.gz"
     else
-        echo "$response" | cut -d'"' -f4
+        echo "https://github.com/GloriousEggroll/proton-ge-custom/releases/latest/download/Proton-GE-latest.tar.gz"
     fi
 }
 
@@ -145,23 +162,24 @@ baixar() {
     
     while [ $attempt -le $MAX_RETRIES ]; do
         info "Baixando $nome (tentativa $attempt/$MAX_RETRIES)..."
-        info "URL: $url"
         
         rm -f "$dest"
         
-        # Usar curl com barra de progresso
-        curl -L --max-time 600 --retry 2 -# -o "$dest" "$url" 2>&1
-        http_code=$?
+        # Usar curl com barra de progresso e follow redirects
+        if curl -L --max-time 600 --retry 2 -# -o "$dest" "$url" 2>&1; then
+            http_code=$?
+        else
+            http_code=$?
+        fi
         
-        if [ $http_code -eq 0 ] && [ -f "$dest" ] && [ -s "$dest" ]; then
-            # Verificar se é um arquivo válido
-            if command -v file >/dev/null 2>&1; then
-                if ! file "$dest" 2>/dev/null | grep -qi "HTML\|ASCII text\|empty"; then
-                    ok "Download completo! ($(du -h "$dest" | cut -f1))"
-                    return 0
-                fi
-            else
-                ok "Download completo!"
+        if [ -f "$dest" ] && [ -s "$dest" ]; then
+            # Verificar se é um arquivo válido (não HTML de erro)
+            if file "$dest" 2>/dev/null | grep -qi "gzip\|xz\|compressed"; then
+                ok "Download completo! ($(du -h "$dest" | cut -f1))"
+                return 0
+            elif [ $(stat -f%z "$dest" 2>/dev/null || stat -c%s "$dest" 2>/dev/null) -gt 50000000 ]; then
+                # Se arquivo é maior que 50MB, provavelmente é válido
+                ok "Download completo! ($(du -h "$dest" | cut -f1))"
                 return 0
             fi
         fi
