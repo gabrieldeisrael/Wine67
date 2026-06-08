@@ -64,7 +64,7 @@ spinner() {
 exibir_logo() {
     command -v clear >/dev/null 2>&1 && clear || printf '\033[2J\033[H'
     echo -e "${MAGENTA}${BOLD}"
-    echo "  ██╗    ██╗██╗███╗   ██╗███████�� ██████╗ ███████╗"
+    echo "  ██╗    ██╗██╗███╗   ██╗███████╗ ██████╗ ███████╗"
     echo "  ██║    ██║██║████╗  ██║██╔════╝██╔════╝ ╚═══╚██║"
     echo "  ██║ █╗ ██║██║██╔██╗ ██║█████╗  ███████╗     ██╔╝"
     echo "  ██║███╗██║██║██║╚██╗██║██╔══╝  ██╔═══██╗   ██╔╝ "
@@ -82,8 +82,8 @@ selecionar_wine_type() {
     echo ""
     echo -e "${CYAN}=== Selecione a versão ===${RESET}"
     echo ""
-    echo -e "  ${YELLOW}[1]${RESET} Wine-GE (Wine com melhorias de games)"
-    echo -e "  ${YELLOW}[2]${RESET} Proton-GE (Proton com melhorias de games)"
+    echo -e "  ${YELLOW}[1]${RESET} Wine-GE (Wine com melhorias de games) - Wine-GE-Proton8-26"
+    echo -e "  ${YELLOW}[2]${RESET} Proton-GE (Proton com melhorias de games) - GE-Proton10-34"
     echo ""
     echo -ne "${CYAN}Escolha (1 ou 2): ${RESET}"
     read -r WINE_CHOICE
@@ -91,11 +91,11 @@ selecionar_wine_type() {
     case "$WINE_CHOICE" in
         1)
             WINE_TYPE="wine-ge"
-            ok "Selecionado: Wine-GE"
+            ok "Selecionado: Wine-GE-Proton8-26"
             ;;
         2)
             WINE_TYPE="proton-ge"
-            ok "Selecionado: Proton-GE"
+            ok "Selecionado: GE-Proton10-34"
             ;;
         *)
             erro "Opção inválida"
@@ -119,25 +119,30 @@ obter_wine_url() {
     local tipo="$1"
     info "Detectando versão mais recente de $tipo..."
     
+    local repo_url
     if [ "$tipo" = "wine-ge" ]; then
-        local releases_url="https://api.github.com/repos/GloriousEggroll/wine-ge-custom/releases/latest"
+        repo_url="GloriousEggroll/wine-ge-custom"
     else
-        local releases_url="https://api.github.com/repos/GloriousEggroll/proton-ge-custom/releases/latest"
+        repo_url="GloriousEggroll/proton-ge-custom"
     fi
     
-    # Tentar obter URL de download
-    local download_url=$(curl -s -L "$releases_url" | grep -o '"browser_download_url":"[^"]*\.tar\.gz"' | head -1 | cut -d'"' -f4)
+    # Usar jq se disponível para parse melhor, senão usar grep
+    if command -v jq >/dev/null 2>&1; then
+        local download_url=$(curl -s "https://api.github.com/repos/${repo_url}/releases/latest" | jq -r '.assets[] | select(.name | endswith(".tar.xz") or endswith(".tar.gz")) | .browser_download_url' | head -1)
+    else
+        # Fallback sem jq: tentar .tar.xz primeiro, depois .tar.gz
+        local download_url=$(curl -s "https://api.github.com/repos/${repo_url}/releases/latest" | grep -oP '"browser_download_url": "\K[^"]*\.tar\.xz' | head -1)
+        
+        if [ -z "$download_url" ]; then
+            download_url=$(curl -s "https://api.github.com/repos/${repo_url}/releases/latest" | grep -oP '"browser_download_url": "\K[^"]*\.tar\.gz' | head -1)
+        fi
+    fi
     
     if [ -n "$download_url" ]; then
         echo "$download_url"
         return 0
-    fi
-    
-    # Se falhar, usar link do /latest que redireciona automaticamente
-    if [ "$tipo" = "wine-ge" ]; then
-        echo "https://github.com/GloriousEggroll/wine-ge-custom/releases/latest"
     else
-        echo "https://github.com/GloriousEggroll/proton-ge-custom/releases/latest"
+        erro "Não foi possível obter URL de download. Verifique sua conexão ou use um arquivo local."
     fi
 }
 
@@ -152,8 +157,8 @@ baixar() {
         
         rm -f "$dest"
         
-        # curl segue redirects automaticamente
-        if curl -L --max-time 600 -# -o "$dest" "$url" 2>&1; then
+        # curl com timeout e redirect automático
+        if curl -L --max-time 600 --connect-timeout 30 -# -o "$dest" "$url" 2>&1; then
             if [ -f "$dest" ] && [ -s "$dest" ]; then
                 ok "Download completo! ($(du -h "$dest" | cut -f1))"
                 return 0
@@ -175,7 +180,7 @@ baixar() {
 
 buscar_tar() {
     local resultado=""
-    for padrao in "Proton-*.tar.gz" "proton-*.tar.xz" "Wine-*.tar.gz" "wine-*.tar.gz" "wine-*.tar.xz"; do
+    for padrao in "GE-Proton*.tar.gz" "GE-Proton*.tar.xz" "Proton-*.tar.gz" "proton-*.tar.xz" "Wine-*.tar.gz" "Wine-*.tar.xz" "wine-*.tar.gz" "wine-*.tar.xz"; do
         resultado=$(find "$SCRIPT_DIR" -maxdepth 3 -name "$padrao" 2>/dev/null | head -1)
         [ -n "$resultado" ] && echo "$resultado" && return 0
         resultado=$(find /media /run/media /mnt -maxdepth 5 -name "$padrao" 2>/dev/null | head -1 2>/dev/null)
@@ -209,7 +214,7 @@ diagnosticar_estrutura() {
 
 instalar_wine() {
     local tipo="$1"
-    local tipo_display=$([ "$tipo" = "wine-ge" ] && echo "Wine-GE" || echo "Proton-GE")
+    local tipo_display=$([ "$tipo" = "wine-ge" ] && echo "Wine-GE-Proton8-26" || echo "GE-Proton10-34")
     
     info "Instalando $tipo_display..."
     
@@ -354,7 +359,7 @@ if [ -z "$DISPLAY" ]; then
     export DISPLAY=:0
 fi
 
-tipo_display=$([ "$WINE_TYPE" = "wine-ge" ] && echo "Wine-GE" || echo "Proton-GE")
+tipo_display=$([ "$WINE_TYPE" = "wine-ge" ] && echo "Wine-GE-Proton8-26" || echo "GE-Proton10-34")
 info "Modo: $tipo_display com DXVK"
 info "LD_LIBRARY_PATH: $INSTALL_DIR/lib64:lib"
 
