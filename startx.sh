@@ -21,8 +21,8 @@ mkdir -p "$WINE67_DIR"
 INSTALL_DIR="$WINE67_DIR/wine"
 PROTON_DIR="$INSTALL_DIR"
 WINE_BIN="$INSTALL_DIR/bin/wine64"
-# Proton 9.0 - Última versão estável com suporte completo
-WINE_URL="https://github.com/GloriousEggroll/proton-ge-custom/releases/download/9.0-GE-1/Proton-9.0-GE-1.tar.gz"
+# Proton 9.36-GE-1 - Versão recente e estável
+WINE_URL="https://github.com/GloriousEggroll/proton-ge-custom/releases/download/9.36-GE-1/Proton-9.36-GE-1.tar.gz"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
 CYAN='\033[0;36m'; BOLD='\033[1m'; DIM='\033[2m'; RESET='\033[0m'
@@ -36,6 +36,8 @@ DEBUG_MODE=0
 COMPAT_LEVEL="high"
 USE_DXVK=1
 WINE_ARCH="win64"
+MAX_RETRIES=3
+RETRY_DELAY=5
 
 erro()  { echo -e "${RED}❌ $1${RESET}"; exit 1; }
 ok()    { echo -e "${GREEN}✔  $1${RESET}"; }
@@ -60,7 +62,7 @@ exibir_logo() {
     command -v clear >/dev/null 2>&1 && clear || printf '\033[2J\033[H'
     echo -e "${MAGENTA}${BOLD}"
     echo "  ██╗    ██╗██╗███╗   ██╗███████╗ ██████╗ ███████╗"
-    echo "  ██║    ██║██║████╗  ██║██╔════╝██╔════╝ ╚════██║"
+    echo "  ██║    ██║██║████╗  ██║██╔════╝██╔════╝ ╚═��══██║"
     echo "  ██║ █╗ ██║██║██╔██╗ ██║█████╗  ███████╗     ██╔╝"
     echo "  ██║███╗██║██║██║╚██╗██║██╔══╝  ██╔═══██╗   ██╔╝ "
     echo "  ╚███╔███╔╝██║██║ ╚████║███████╗╚██████╔╝   ██║  "
@@ -82,23 +84,61 @@ baixar() {
     local url="$1"
     local dest="$2"
     local nome="$3"
+    local attempt=1
+    local http_code=0
     
-    if command -v wget >/dev/null 2>&1; then
-        wget -q -O "$dest" "$url" &
-    else
-        curl -L -s -o "$dest" "$url" &
-    fi
-    
-    local dl_pid=$!
-    spinner "$dl_pid" "Baixando $nome..."
-    wait "$dl_pid" || erro "Falha ao baixar $nome"
-    
-    if command -v file >/dev/null 2>&1; then
-        if file "$dest" 2>/dev/null | grep -qi "HTML\|ASCII text"; then
-            rm -f "$dest"
-            erro "Servidor retornou erro ao baixar $nome"
+    while [ $attempt -le $MAX_RETRIES ]; do
+        info "Baixando $nome (tentativa $attempt/$MAX_RETRIES)..."
+        
+        rm -f "$dest"
+        
+        if command -v wget >/dev/null 2>&1; then
+            http_code=$(wget --timeout=60 -q -O "$dest" "$url" 2>&1; echo $?)
+            if [ $http_code -eq 0 ] && [ -f "$dest" ]; then
+                # Verificar se é um arquivo válido
+                if command -v file >/dev/null 2>&1; then
+                    if ! file "$dest" 2>/dev/null | grep -qi "HTML\|ASCII text\|empty"; then
+                        ok "Download completo!"
+                        return 0
+                    fi
+                else
+                    # Sem comando file, verificar tamanho
+                    if [ -s "$dest" ]; then
+                        ok "Download completo!"
+                        return 0
+                    fi
+                fi
+            fi
+        else
+            http_code=$(curl -L --max-time 120 --retry 2 -s -o "$dest" "$url"; echo $?)
+            if [ $http_code -eq 0 ] && [ -f "$dest" ]; then
+                # Verificar se é um arquivo válido
+                if command -v file >/dev/null 2>&1; then
+                    if ! file "$dest" 2>/dev/null | grep -qi "HTML\|ASCII text\|empty"; then
+                        ok "Download completo!"
+                        return 0
+                    fi
+                else
+                    # Sem comando file, verificar tamanho
+                    if [ -s "$dest" ]; then
+                        ok "Download completo!"
+                        return 0
+                    fi
+                fi
+            fi
         fi
-    fi
+        
+        rm -f "$dest"
+        
+        if [ $attempt -lt $MAX_RETRIES ]; then
+            aviso "Falha na tentativa $attempt. Aguardando ${RETRY_DELAY}s antes de retry..."
+            sleep $RETRY_DELAY
+        fi
+        
+        attempt=$((attempt + 1))
+    done
+    
+    erro "Falha ao baixar $nome após $MAX_RETRIES tentativas"
 }
 
 buscar_tar() {
@@ -114,7 +154,8 @@ buscar_tar() {
 
 validar_wine_instalacao() {
     # Verificar se Proton está instalado
-    if [ ! -d "$PROTON_DIR/proton-9.0-ge-1" ] && [ ! -d "$PROTON_DIR/Proton-9.0-GE-1" ]; then
+    if [ ! -d "$PROTON_DIR/proton-9.0-ge-1" ] && [ ! -d "$PROTON_DIR/Proton-9.0-GE-1" ] && \
+       [ ! -d "$PROTON_DIR/Proton-9.36-GE-1" ] && [ ! -d "$PROTON_DIR/proton-9.36-ge-1" ]; then
         if [ ! -f "$INSTALL_DIR/bin/wine64" ]; then
             return 1
         fi
@@ -140,7 +181,7 @@ diagnosticar_estrutura() {
 }
 
 instalar_wine() {
-    info "Instalando Proton-GE 9.0..."
+    info "Instalando Proton-GE 9.36..."
     
     if [ -d "$INSTALL_DIR" ] && [ "$(ls -A "$INSTALL_DIR")" ]; then
         aviso "Removendo instalação anterior..."
@@ -153,8 +194,8 @@ instalar_wine() {
         ok "Arquivo encontrado: $GE_TAR"
     else
         GE_TAR="$INSTALL_DIR/proton-ge.tar.gz"
-        info "Baixando Proton-GE 9.0 (~800MB)..."
-        baixar "$WINE_URL" "$GE_TAR" "Proton-GE 9.0"
+        info "Baixando Proton-GE 9.36 (~800MB)..."
+        baixar "$WINE_URL" "$GE_TAR" "Proton-GE 9.36"
     fi
 
     # Determinar flags de tar
@@ -204,7 +245,7 @@ instalar_wine() {
         erro "FALHA: Proton não foi instalado corretamente."
     fi
 
-    ok "Proton-GE 9.0 instalado!"
+    ok "Proton-GE 9.36 instalado!"
 }
 
 # ============================================================================
@@ -291,7 +332,7 @@ if [ -z "$DISPLAY" ]; then
     export DISPLAY=:0
 fi
 
-info "Modo: PROTON-GE 9.0 com DXVK"
+info "Modo: PROTON-GE 9.36 com DXVK"
 info "LD_LIBRARY_PATH: $INSTALL_DIR/lib64:lib"
 
 # Áudio
@@ -386,7 +427,7 @@ fi
 echo ""
 echo -e "${GREEN}╔═════════════════════════════════════════════╗${RESET}"
 echo -e "${GREEN}║ 🎮 $(basename "$SELECTED")${RESET}"
-echo -e "${GREEN}║ 🔧 $WINE_ARCH | 🚀 Proton-GE 9.0 + DXVK${RESET}"
+echo -e "${GREEN}║ 🔧 $WINE_ARCH | 🚀 Proton-GE 9.36 + DXVK${RESET}"
 echo -e "${GREEN}║ 📁 $GAME_NAME${RESET}"
 echo -e "${GREEN}╚═════════════════════════════════════════════╝${RESET}"
 echo ""
