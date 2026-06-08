@@ -64,14 +64,14 @@ spinner() {
 exibir_logo() {
     command -v clear >/dev/null 2>&1 && clear || printf '\033[2J\033[H'
     echo -e "${MAGENTA}${BOLD}"
-    echo "  ██╗    ██╗██╗███╗   ██╗███████╗ ██████╗ ███████╗"
+    echo "  ██╗    ██╗██╗███╗   ██╗███████�� ██████╗ ███████╗"
     echo "  ██║    ██║██║████╗  ██║██╔════╝██╔════╝ ╚═══╚██║"
     echo "  ██║ █╗ ██║██║██╔██╗ ██║█████╗  ███████╗     ██╔╝"
     echo "  ██║███╗██║██║██║╚██╗██║██╔══╝  ██╔═══██╗   ██╔╝ "
     echo "  ╚███╔███╔╝██║██║ ╚████║███████╗╚██████╔╝   ██║  "
     echo "   ╚══╝╚══╝ ╚═╝╚═╝  ╚═══╝╚══════╝ ╚═════╝    ╚═╝  "
     echo -e "${RESET}"
-    echo -e "  ${DIM}Portable Game Launcher — sem sudo${RESET}"
+    echo -e "  ${DIM}Portable Game Launcher — SEM SUDO${RESET}"
     echo -e "  ${DIM}Base: $WINE67_DIR${RESET}"
     echo -e "  ${DIM}Desktop: $DESKTOP_SESSION | Sessão: $XDG_SESSION_TYPE${RESET}"
     echo ""
@@ -103,53 +103,41 @@ selecionar_wine_type() {
     esac
 }
 
-# Validações de dependências
-command -v curl >/dev/null 2>&1 || erro "Instale curl (sudo apt install curl)"
-command -v tar >/dev/null 2>&1 || erro "tar não encontrado"
-command -v grep >/dev/null 2>&1 || erro "grep não encontrado"
-command -v jq >/dev/null 2>&1 || aviso "jq não encontrado - usando fallback"
+# Validações de dependências - SEM SUDO!
+if ! command -v curl >/dev/null 2>&1; then
+    erro "curl não está instalado!\n\nPeça ao administrador para instalar:\n  Ubuntu/Debian: apt install curl\n  Fedora: dnf install curl"
+fi
+
+if ! command -v tar >/dev/null 2>&1; then
+    erro "tar não está instalado!"
+fi
 
 mkdir -p "$INSTALL_DIR"
 
-# Função para obter a versão mais recente com melhor parsing
+# Função para obter a versão mais recente
 obter_wine_url() {
     local tipo="$1"
-    info "Detectando versão mais recente do $tipo..."
+    info "Detectando versão mais recente de $tipo..."
     
     if [ "$tipo" = "wine-ge" ]; then
-        local releases_url="https://api.github.com/repos/GloriousEggroll/wine-ge-custom/releases"
-        local repo_name="wine-ge-custom"
+        local releases_url="https://api.github.com/repos/GloriousEggroll/wine-ge-custom/releases/latest"
     else
-        local releases_url="https://api.github.com/repos/GloriousEggroll/proton-ge-custom/releases"
-        local repo_name="proton-ge-custom"
+        local releases_url="https://api.github.com/repos/GloriousEggroll/proton-ge-custom/releases/latest"
     fi
     
-    # Tentar com jq se disponível
-    if command -v jq >/dev/null 2>&1; then
-        local download_url=$(curl -s "$releases_url" | jq -r '.[0].assets[]?.browser_download_url' | grep -E '\.tar\.gz$' | head -1)
-        
-        if [ -n "$download_url" ] && [ "$download_url" != "null" ]; then
-            echo "$download_url"
-            return 0
-        fi
-    fi
+    # Tentar obter URL de download
+    local download_url=$(curl -s -L "$releases_url" | grep -o '"browser_download_url":"[^"]*\.tar\.gz"' | head -1 | cut -d'"' -f4)
     
-    # Fallback: parsing simples
-    local response=$(curl -s "$releases_url" | grep -o '"browser_download_url":"[^"]*\.tar\.gz"' | head -1 | cut -d'"' -f4)
-    
-    if [ -n "$response" ]; then
-        echo "$response"
+    if [ -n "$download_url" ]; then
+        echo "$download_url"
         return 0
     fi
     
-    # Última opção: link direto para última release
-    info "Usando release mais recente do repositório..."
-    
+    # Se falhar, usar link do /latest que redireciona automaticamente
     if [ "$tipo" = "wine-ge" ]; then
-        # Redirect do GitHub segue para o arquivo tar.gz mais recente
-        echo "https://github.com/GloriousEggroll/wine-ge-custom/releases/latest/download/wine-ge-continuous.tar.gz"
+        echo "https://github.com/GloriousEggroll/wine-ge-custom/releases/latest"
     else
-        echo "https://github.com/GloriousEggroll/proton-ge-custom/releases/latest/download/Proton-GE-latest.tar.gz"
+        echo "https://github.com/GloriousEggroll/proton-ge-custom/releases/latest"
     fi
 }
 
@@ -158,27 +146,15 @@ baixar() {
     local dest="$2"
     local nome="$3"
     local attempt=1
-    local http_code=0
     
     while [ $attempt -le $MAX_RETRIES ]; do
         info "Baixando $nome (tentativa $attempt/$MAX_RETRIES)..."
         
         rm -f "$dest"
         
-        # Usar curl com barra de progresso e follow redirects
-        if curl -L --max-time 600 --retry 2 -# -o "$dest" "$url" 2>&1; then
-            http_code=$?
-        else
-            http_code=$?
-        fi
-        
-        if [ -f "$dest" ] && [ -s "$dest" ]; then
-            # Verificar se é um arquivo válido (não HTML de erro)
-            if file "$dest" 2>/dev/null | grep -qi "gzip\|xz\|compressed"; then
-                ok "Download completo! ($(du -h "$dest" | cut -f1))"
-                return 0
-            elif [ $(stat -f%z "$dest" 2>/dev/null || stat -c%s "$dest" 2>/dev/null) -gt 50000000 ]; then
-                # Se arquivo é maior que 50MB, provavelmente é válido
+        # curl segue redirects automaticamente
+        if curl -L --max-time 600 -# -o "$dest" "$url" 2>&1; then
+            if [ -f "$dest" ] && [ -s "$dest" ]; then
                 ok "Download completo! ($(du -h "$dest" | cut -f1))"
                 return 0
             fi
@@ -186,12 +162,8 @@ baixar() {
         
         rm -f "$dest"
         
-        if [ $http_code -ne 0 ]; then
-            echo "  Código de erro: $http_code" >&2
-        fi
-        
         if [ $attempt -lt $MAX_RETRIES ]; then
-            aviso "Falha na tentativa $attempt. Aguardando ${RETRY_DELAY}s antes de retry..."
+            aviso "Falha na tentativa $attempt. Aguardando ${RETRY_DELAY}s..."
             sleep $RETRY_DELAY
         fi
         
@@ -203,7 +175,7 @@ baixar() {
 
 buscar_tar() {
     local resultado=""
-    for padrao in "Proton-*.tar.gz" "proton-*.tar.xz" "Wine-*.tar.gz" "wine-*.tar.gz" "wine-*.tar.xz" "wine-*.tar"; do
+    for padrao in "Proton-*.tar.gz" "proton-*.tar.xz" "Wine-*.tar.gz" "wine-*.tar.gz" "wine-*.tar.xz"; do
         resultado=$(find "$SCRIPT_DIR" -maxdepth 3 -name "$padrao" 2>/dev/null | head -1)
         [ -n "$resultado" ] && echo "$resultado" && return 0
         resultado=$(find /media /run/media /mnt -maxdepth 5 -name "$padrao" 2>/dev/null | head -1 2>/dev/null)
@@ -213,12 +185,10 @@ buscar_tar() {
 }
 
 validar_wine_instalacao() {
-    # Verificar se Wine/Proton está instalado
     if [ ! -f "$INSTALL_DIR/bin/wine64" ] && [ ! -f "$INSTALL_DIR/bin/wine" ] && [ ! -f "$INSTALL_DIR/proton" ]; then
         return 1
     fi
     
-    # Verificar estrutura básica
     if [ ! -d "$INSTALL_DIR/lib" ] && [ ! -d "$INSTALL_DIR/lib64" ]; then
         return 1
     fi
@@ -241,7 +211,7 @@ instalar_wine() {
     local tipo="$1"
     local tipo_display=$([ "$tipo" = "wine-ge" ] && echo "Wine-GE" || echo "Proton-GE")
     
-    info "Instalando $tipo_display (versão mais recente)..."
+    info "Instalando $tipo_display..."
     
     if [ -d "$INSTALL_DIR" ] && [ "$(ls -A "$INSTALL_DIR")" ]; then
         aviso "Removendo instalação anterior..."
@@ -286,13 +256,10 @@ instalar_wine() {
     
     info "Reorganizando..."
     
-    # Wine/Proton vem em subdiretório
     local top_dir=$(find "$INSTALL_DIR/temp_extract" -maxdepth 1 -mindepth 1 -type d | head -1)
     
     if [ -n "$top_dir" ]; then
-        # Mover tudo de dentro do subdir para INSTALL_DIR
         mv "$top_dir"/* "$INSTALL_DIR/" 2>/dev/null || true
-        # Copiar também arquivos ocultos se houver
         mv "$top_dir"/.[!.]* "$INSTALL_DIR/" 2>/dev/null || true
     fi
     
@@ -364,25 +331,16 @@ ok "Wine: $WINE_BIN"
 ok "Proton: ${PROTON_BINARY:-[não usado]}"
 
 # ============================================================================
-# VARIÁVEIS DE AMBIENTE - CRÍTICAS PARA WINE/PROTON
+# VARIÁVEIS DE AMBIENTE
 # ============================================================================
 
-# Para Wine/Proton, LD_LIBRARY_PATH DEVE vir ANTES
 export LD_LIBRARY_PATH="$INSTALL_DIR/lib64:$INSTALL_DIR/lib:${LD_LIBRARY_PATH:-}"
 export PATH="$INSTALL_DIR/bin:$PATH"
-
-# CRÍTICO: Informar ao Wine/Proton onde estão seus binários
 export WINELOADER="$WINE_BIN"
 export WINESERVER="$INSTALL_DIR/bin/wineserver"
-
-# DirectX integrado
 export DXVK_HUD=off
 export STAGING_SHARED_MEMORY=1
-
-# Sobrescrita de DLLs - IMPORTANTE: deixar nativas
 export WINEDLLOVERRIDES="winemenubuilder=d;rpcss=n;midimap=n"
-
-# Force Proton/Wine usar suas libs
 export PROTON_NO_ESYNC=0
 export PROTON_USE_WINED3D=0
 
@@ -396,7 +354,7 @@ if [ -z "$DISPLAY" ]; then
     export DISPLAY=:0
 fi
 
-local tipo_display=$([ "$WINE_TYPE" = "wine-ge" ] && echo "Wine-GE" || echo "Proton-GE")
+tipo_display=$([ "$WINE_TYPE" = "wine-ge" ] && echo "Wine-GE" || echo "Proton-GE")
 info "Modo: $tipo_display com DXVK"
 info "LD_LIBRARY_PATH: $INSTALL_DIR/lib64:lib"
 
@@ -444,20 +402,20 @@ IFS=$'\n' UNIQUE_EXES=($(sort <<<"${UNIQUE_EXES[*]}"))
 
 if [ ${#UNIQUE_EXES[@]} -eq 0 ]; then
     echo ""
-    echo -ne "  Caminho: "
+    echo -ne "  Caminho do .exe: "
     read -r SELECTED
     SELECTED="${SELECTED//\'/}"; SELECTED="${SELECTED//\"/}"
     SELECTED="${SELECTED# }";   SELECTED="${SELECTED% }"
     [ -f "$SELECTED" ] || erro "Não encontrado: '$SELECTED'"
 else
     echo ""
-    echo "Jogos:"
+    echo "Jogos encontrados:"
     echo ""
     for i in "${!UNIQUE_EXES[@]}"; do
         echo -e "  ${YELLOW}[$((i+1))]${RESET} $(basename "${UNIQUE_EXES[$i]}")"
     done
     echo ""
-    echo -ne "${CYAN}Escolha: ${RESET}"
+    echo -ne "${CYAN}Escolha o número: ${RESET}"
     read -r CHOICE
 
     if [[ "$CHOICE" =~ ^[0-9]+$ ]] && [ "$CHOICE" -ge 1 ] && [ "$CHOICE" -le "${#UNIQUE_EXES[@]}" ]; then
@@ -497,7 +455,7 @@ echo -e "${GREEN}║ 📁 $GAME_NAME${RESET}"
 echo -e "${GREEN}╚═════════════════════════════════════════════╝${RESET}"
 echo ""
 
-# EXECUTAR com LD_LIBRARY_PATH garantido
+# EXECUTAR
 WINEARCH="$WINE_ARCH" WINEPREFIX="$WINEPREFIX" LD_LIBRARY_PATH="$INSTALL_DIR/lib64:$INSTALL_DIR/lib:${LD_LIBRARY_PATH:-}" "$WINE_BIN" "$SELECTED"
 
 EXIT=$?
