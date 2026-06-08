@@ -21,8 +21,6 @@ mkdir -p "$WINE67_DIR"
 INSTALL_DIR="$WINE67_DIR/wine"
 PROTON_DIR="$INSTALL_DIR"
 WINE_BIN="$INSTALL_DIR/bin/wine64"
-# Proton 9.36-GE-1 - Versão recente e estável
-WINE_URL="https://github.com/GloriousEggroll/proton-ge-custom/releases/download/9.36-GE-1/Proton-9.36-GE-1.tar.gz"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
 CYAN='\033[0;36m'; BOLD='\033[1m'; DIM='\033[2m'; RESET='\033[0m'
@@ -74,11 +72,29 @@ exibir_logo() {
     echo ""
 }
 
-# Validações de dependências - SOMENTE CURL
+# Validações de dependências
 command -v curl >/dev/null 2>&1 || erro "Instale curl (sudo apt install curl)"
 command -v tar >/dev/null 2>&1 || erro "tar não encontrado"
+command -v grep >/dev/null 2>&1 || erro "grep não encontrado"
 
 mkdir -p "$INSTALL_DIR"
+
+# Função para obter a versão mais recente do Proton-GE
+obter_proton_url() {
+    info "Detectando versão mais recente do Proton-GE..."
+    
+    # Usar GitHub API para obter o release mais recente
+    local releases_url="https://api.github.com/repos/GloriousEggroll/proton-ge-custom/releases"
+    local response=$(curl -s "$releases_url" | grep -o '"browser_download_url":"[^"]*\.tar\.gz"' | head -1)
+    
+    if [ -z "$response" ]; then
+        # Fallback: tentar página de releases
+        local fallback_url="https://github.com/GloriousEggroll/proton-ge-custom/releases/latest"
+        echo "$fallback_url"
+    else
+        echo "$response" | cut -d'"' -f4
+    fi
+}
 
 baixar() {
     local url="$1"
@@ -89,26 +105,24 @@ baixar() {
     
     while [ $attempt -le $MAX_RETRIES ]; do
         info "Baixando $nome (tentativa $attempt/$MAX_RETRIES)..."
+        info "URL: $url"
         
         rm -f "$dest"
         
-        # Usar APENAS curl
-        curl -L --max-time 300 --retry 2 -# -o "$dest" "$url"
+        # Usar curl com barra de progresso
+        curl -L --max-time 600 --retry 2 -# -o "$dest" "$url" 2>&1
         http_code=$?
         
-        if [ $http_code -eq 0 ] && [ -f "$dest" ]; then
+        if [ $http_code -eq 0 ] && [ -f "$dest" ] && [ -s "$dest" ]; then
             # Verificar se é um arquivo válido
             if command -v file >/dev/null 2>&1; then
                 if ! file "$dest" 2>/dev/null | grep -qi "HTML\|ASCII text\|empty"; then
-                    ok "Download completo!"
+                    ok "Download completo! ($(du -h "$dest" | cut -f1))"
                     return 0
                 fi
             else
-                # Sem comando file, verificar tamanho
-                if [ -s "$dest" ]; then
-                    ok "Download completo!"
-                    return 0
-                fi
+                ok "Download completo!"
+                return 0
             fi
         fi
         
@@ -142,9 +156,8 @@ buscar_tar() {
 
 validar_wine_instalacao() {
     # Verificar se Proton está instalado
-    if [ ! -d "$PROTON_DIR/proton-9.0-ge-1" ] && [ ! -d "$PROTON_DIR/Proton-9.0-GE-1" ] && \
-       [ ! -d "$PROTON_DIR/Proton-9.36-GE-1" ] && [ ! -d "$PROTON_DIR/proton-9.36-ge-1" ]; then
-        if [ ! -f "$INSTALL_DIR/bin/wine64" ]; then
+    if [ ! -d "$PROTON_DIR"/* ] 2>/dev/null; then
+        if [ ! -f "$INSTALL_DIR/bin/wine64" ] && [ ! -f "$INSTALL_DIR/bin/wine" ]; then
             return 1
         fi
     fi
@@ -169,7 +182,7 @@ diagnosticar_estrutura() {
 }
 
 instalar_wine() {
-    info "Instalando Proton-GE 9.36..."
+    info "Instalando Proton-GE (versão mais recente)..."
     
     if [ -d "$INSTALL_DIR" ] && [ "$(ls -A "$INSTALL_DIR")" ]; then
         aviso "Removendo instalação anterior..."
@@ -181,9 +194,10 @@ instalar_wine() {
     if GE_TAR=$(buscar_tar); then
         ok "Arquivo encontrado: $GE_TAR"
     else
+        local WINE_URL=$(obter_proton_url)
         GE_TAR="$INSTALL_DIR/proton-ge.tar.gz"
-        info "Baixando Proton-GE 9.36 (~800MB)..."
-        baixar "$WINE_URL" "$GE_TAR" "Proton-GE 9.36"
+        info "Baixando Proton-GE (~800MB)..."
+        baixar "$WINE_URL" "$GE_TAR" "Proton-GE"
     fi
 
     # Determinar flags de tar
@@ -233,7 +247,7 @@ instalar_wine() {
         erro "FALHA: Proton não foi instalado corretamente."
     fi
 
-    ok "Proton-GE 9.36 instalado!"
+    ok "Proton-GE instalado com sucesso!"
 }
 
 # ============================================================================
@@ -320,7 +334,7 @@ if [ -z "$DISPLAY" ]; then
     export DISPLAY=:0
 fi
 
-info "Modo: PROTON-GE 9.36 com DXVK"
+info "Modo: PROTON-GE com DXVK"
 info "LD_LIBRARY_PATH: $INSTALL_DIR/lib64:lib"
 
 # Áudio
@@ -413,9 +427,9 @@ if [ ! -f "$WINEPREFIX/system.reg" ]; then
 fi
 
 echo ""
-echo -e "${GREEN}╔════════��════════════════════════════════════╗${RESET}"
+echo -e "${GREEN}╔═════════════════════════════════════════════╗${RESET}"
 echo -e "${GREEN}║ 🎮 $(basename "$SELECTED")${RESET}"
-echo -e "${GREEN}║ 🔧 $WINE_ARCH | 🚀 Proton-GE 9.36 + DXVK${RESET}"
+echo -e "${GREEN}║ 🔧 $WINE_ARCH | 🚀 Proton-GE + DXVK${RESET}"
 echo -e "${GREEN}║ 📁 $GAME_NAME${RESET}"
 echo -e "${GREEN}╚═════════════════════════════════════════════╝${RESET}"
 echo ""
