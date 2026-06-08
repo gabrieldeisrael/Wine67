@@ -62,7 +62,7 @@ exibir_logo() {
     command -v clear >/dev/null 2>&1 && clear || printf '\033[2J\033[H'
     echo -e "${MAGENTA}${BOLD}"
     echo "  ██╗    ██╗██╗███╗   ██╗███████╗ ██████╗ ███████╗"
-    echo "  ██║    ██║██║████╗  ██║██╔════╝██╔════╝ ╚═��══██║"
+    echo "  ██║    ██║██║████╗  ██║██╔════╝██╔════╝ ╚═══╚██║"
     echo "  ██║ █╗ ██║██║██╔██╗ ██║█████╗  ███████╗     ██╔╝"
     echo "  ██║███╗██║██║██║╚██╗██║██╔══╝  ██╔═══██╗   ██╔╝ "
     echo "  ╚███╔███╔╝██║██║ ╚████║███████╗╚██████╔╝   ██║  "
@@ -93,7 +93,9 @@ baixar() {
         rm -f "$dest"
         
         if command -v wget >/dev/null 2>&1; then
-            http_code=$(wget --timeout=60 -q -O "$dest" "$url" 2>&1; echo $?)
+            wget --timeout=60 -q -O "$dest" "$url" 2>&1
+            http_code=$?
+            
             if [ $http_code -eq 0 ] && [ -f "$dest" ]; then
                 # Verificar se é um arquivo válido
                 if command -v file >/dev/null 2>&1; then
@@ -110,7 +112,9 @@ baixar() {
                 fi
             fi
         else
-            http_code=$(curl -L --max-time 120 --retry 2 -s -o "$dest" "$url"; echo $?)
+            curl -L --max-time 120 --retry 2 -s -o "$dest" "$url"
+            http_code=$?
+            
             if [ $http_code -eq 0 ] && [ -f "$dest" ]; then
                 # Verificar se é um arquivo válido
                 if command -v file >/dev/null 2>&1; then
@@ -129,6 +133,10 @@ baixar() {
         fi
         
         rm -f "$dest"
+        
+        if [ $http_code -ne 0 ]; then
+            echo "  Código de erro: $http_code" >&2
+        fi
         
         if [ $attempt -lt $MAX_RETRIES ]; then
             aviso "Falha na tentativa $attempt. Aguardando ${RETRY_DELAY}s antes de retry..."
