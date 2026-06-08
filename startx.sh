@@ -74,8 +74,8 @@ exibir_logo() {
     echo ""
 }
 
-# Validações de dependências
-command -v wget >/dev/null 2>&1 || command -v curl >/dev/null 2>&1 || erro "Instale wget ou curl"
+# Validações de dependências - SOMENTE CURL
+command -v curl >/dev/null 2>&1 || erro "Instale curl (sudo apt install curl)"
 command -v tar >/dev/null 2>&1 || erro "tar não encontrado"
 
 mkdir -p "$INSTALL_DIR"
@@ -92,42 +92,22 @@ baixar() {
         
         rm -f "$dest"
         
-        if command -v wget >/dev/null 2>&1; then
-            wget --timeout=60 -q -O "$dest" "$url" 2>&1
-            http_code=$?
-            
-            if [ $http_code -eq 0 ] && [ -f "$dest" ]; then
-                # Verificar se é um arquivo válido
-                if command -v file >/dev/null 2>&1; then
-                    if ! file "$dest" 2>/dev/null | grep -qi "HTML\|ASCII text\|empty"; then
-                        ok "Download completo!"
-                        return 0
-                    fi
-                else
-                    # Sem comando file, verificar tamanho
-                    if [ -s "$dest" ]; then
-                        ok "Download completo!"
-                        return 0
-                    fi
+        # Usar APENAS curl
+        curl -L --max-time 300 --retry 2 -# -o "$dest" "$url"
+        http_code=$?
+        
+        if [ $http_code -eq 0 ] && [ -f "$dest" ]; then
+            # Verificar se é um arquivo válido
+            if command -v file >/dev/null 2>&1; then
+                if ! file "$dest" 2>/dev/null | grep -qi "HTML\|ASCII text\|empty"; then
+                    ok "Download completo!"
+                    return 0
                 fi
-            fi
-        else
-            curl -L --max-time 120 --retry 2 -s -o "$dest" "$url"
-            http_code=$?
-            
-            if [ $http_code -eq 0 ] && [ -f "$dest" ]; then
-                # Verificar se é um arquivo válido
-                if command -v file >/dev/null 2>&1; then
-                    if ! file "$dest" 2>/dev/null | grep -qi "HTML\|ASCII text\|empty"; then
-                        ok "Download completo!"
-                        return 0
-                    fi
-                else
-                    # Sem comando file, verificar tamanho
-                    if [ -s "$dest" ]; then
-                        ok "Download completo!"
-                        return 0
-                    fi
+            else
+                # Sem comando file, verificar tamanho
+                if [ -s "$dest" ]; then
+                    ok "Download completo!"
+                    return 0
                 fi
             fi
         fi
@@ -433,7 +413,7 @@ if [ ! -f "$WINEPREFIX/system.reg" ]; then
 fi
 
 echo ""
-echo -e "${GREEN}╔═════════════════════════════════════════════╗${RESET}"
+echo -e "${GREEN}╔════════��════════════════════════════════════╗${RESET}"
 echo -e "${GREEN}║ 🎮 $(basename "$SELECTED")${RESET}"
 echo -e "${GREEN}║ 🔧 $WINE_ARCH | 🚀 Proton-GE 9.36 + DXVK${RESET}"
 echo -e "${GREEN}║ 📁 $GAME_NAME${RESET}"
