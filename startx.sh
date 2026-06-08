@@ -37,6 +37,11 @@ WINE_ARCH="win64"
 MAX_RETRIES=3
 RETRY_DELAY=5
 
+# ============================================================================
+# SELEÇÃO DE VERSÃO (Wine-GE vs Proton-GE)
+# ============================================================================
+WINE_TYPE="" # "wine-ge" ou "proton-ge"
+
 erro()  { echo -e "${RED}❌ $1${RESET}"; exit 1; }
 ok()    { echo -e "${GREEN}✔  $1${RESET}"; }
 info()  { echo -e "${CYAN}➜  $1${RESET}"; }
@@ -66,10 +71,36 @@ exibir_logo() {
     echo "  ╚███╔███╔╝██║██║ ╚████║███████╗╚██████╔╝   ██║  "
     echo "   ╚══╝╚══╝ ╚═╝╚═╝  ╚═══╝╚══════╝ ╚═════╝    ╚═╝  "
     echo -e "${RESET}"
-    echo -e "  ${DIM}Proton-GE Portable Game Launcher — sem sudo${RESET}"
+    echo -e "  ${DIM}Portable Game Launcher — sem sudo${RESET}"
     echo -e "  ${DIM}Base: $WINE67_DIR${RESET}"
     echo -e "  ${DIM}Desktop: $DESKTOP_SESSION | Sessão: $XDG_SESSION_TYPE${RESET}"
     echo ""
+}
+
+# Selecionar tipo de Wine
+selecionar_wine_type() {
+    echo ""
+    echo -e "${CYAN}=== Selecione a versão ===${RESET}"
+    echo ""
+    echo -e "  ${YELLOW}[1]${RESET} Wine-GE (Wine com melhorias de games)"
+    echo -e "  ${YELLOW}[2]${RESET} Proton-GE (Proton com melhorias de games)"
+    echo ""
+    echo -ne "${CYAN}Escolha (1 ou 2): ${RESET}"
+    read -r WINE_CHOICE
+    
+    case "$WINE_CHOICE" in
+        1)
+            WINE_TYPE="wine-ge"
+            ok "Selecionado: Wine-GE"
+            ;;
+        2)
+            WINE_TYPE="proton-ge"
+            ok "Selecionado: Proton-GE"
+            ;;
+        *)
+            erro "Opção inválida"
+            ;;
+    esac
 }
 
 # Validações de dependências
@@ -79,18 +110,27 @@ command -v grep >/dev/null 2>&1 || erro "grep não encontrado"
 
 mkdir -p "$INSTALL_DIR"
 
-# Função para obter a versão mais recente do Proton-GE
-obter_proton_url() {
-    info "Detectando versão mais recente do Proton-GE..."
+# Função para obter a versão mais recente
+obter_wine_url() {
+    local tipo="$1"
+    info "Detectando versão mais recente do $tipo..."
     
-    # Usar GitHub API para obter o release mais recente
-    local releases_url="https://api.github.com/repos/GloriousEggroll/proton-ge-custom/releases"
+    if [ "$tipo" = "wine-ge" ]; then
+        # Wine-GE do repositório official
+        local releases_url="https://api.github.com/repos/GloriousEggroll/wine-ge-custom/releases"
+    else
+        # Proton-GE
+        local releases_url="https://api.github.com/repos/GloriousEggroll/proton-ge-custom/releases"
+    fi
+    
     local response=$(curl -s "$releases_url" | grep -o '"browser_download_url":"[^"]*\.tar\.gz"' | head -1)
     
     if [ -z "$response" ]; then
-        # Fallback: tentar página de releases
-        local fallback_url="https://github.com/GloriousEggroll/proton-ge-custom/releases/latest"
-        echo "$fallback_url"
+        if [ "$tipo" = "wine-ge" ]; then
+            erro "Não foi possível obter a versão mais recente de Wine-GE"
+        else
+            erro "Não foi possível obter a versão mais recente de Proton-GE"
+        fi
     else
         echo "$response" | cut -d'"' -f4
     fi
@@ -145,7 +185,7 @@ baixar() {
 
 buscar_tar() {
     local resultado=""
-    for padrao in "Proton-*.tar.gz" "proton-*.tar.xz" "wine-*.tar.xz" "wine-*.tar.gz" "wine-*.tar"; do
+    for padrao in "Proton-*.tar.gz" "proton-*.tar.xz" "Wine-*.tar.gz" "wine-*.tar.gz" "wine-*.tar.xz" "wine-*.tar"; do
         resultado=$(find "$SCRIPT_DIR" -maxdepth 3 -name "$padrao" 2>/dev/null | head -1)
         [ -n "$resultado" ] && echo "$resultado" && return 0
         resultado=$(find /media /run/media /mnt -maxdepth 5 -name "$padrao" 2>/dev/null | head -1 2>/dev/null)
@@ -155,11 +195,9 @@ buscar_tar() {
 }
 
 validar_wine_instalacao() {
-    # Verificar se Proton está instalado
-    if [ ! -d "$PROTON_DIR"/* ] 2>/dev/null; then
-        if [ ! -f "$INSTALL_DIR/bin/wine64" ] && [ ! -f "$INSTALL_DIR/bin/wine" ]; then
-            return 1
-        fi
+    # Verificar se Wine/Proton está instalado
+    if [ ! -f "$INSTALL_DIR/bin/wine64" ] && [ ! -f "$INSTALL_DIR/bin/wine" ] && [ ! -f "$INSTALL_DIR/proton" ]; then
+        return 1
     fi
     
     # Verificar estrutura básica
@@ -182,7 +220,10 @@ diagnosticar_estrutura() {
 }
 
 instalar_wine() {
-    info "Instalando Proton-GE (versão mais recente)..."
+    local tipo="$1"
+    local tipo_display=$([ "$tipo" = "wine-ge" ] && echo "Wine-GE" || echo "Proton-GE")
+    
+    info "Instalando $tipo_display (versão mais recente)..."
     
     if [ -d "$INSTALL_DIR" ] && [ "$(ls -A "$INSTALL_DIR")" ]; then
         aviso "Removendo instalação anterior..."
@@ -194,10 +235,10 @@ instalar_wine() {
     if GE_TAR=$(buscar_tar); then
         ok "Arquivo encontrado: $GE_TAR"
     else
-        local WINE_URL=$(obter_proton_url)
-        GE_TAR="$INSTALL_DIR/proton-ge.tar.gz"
-        info "Baixando Proton-GE (~800MB)..."
-        baixar "$WINE_URL" "$GE_TAR" "Proton-GE"
+        local WINE_URL=$(obter_wine_url "$tipo")
+        GE_TAR="$INSTALL_DIR/wine.tar.gz"
+        info "Baixando $tipo_display (~800MB)..."
+        baixar "$WINE_URL" "$GE_TAR" "$tipo_display"
     fi
 
     # Determinar flags de tar
@@ -215,7 +256,7 @@ instalar_wine() {
     fi
     ok "Arquivo verificado."
 
-    info "Extraindo Proton..."
+    info "Extraindo $tipo_display..."
     
     rm -rf "$INSTALL_DIR/temp_extract"
     mkdir -p "$INSTALL_DIR/temp_extract"
@@ -227,7 +268,7 @@ instalar_wine() {
     
     info "Reorganizando..."
     
-    # Proton vem em subdiretório
+    # Wine/Proton vem em subdiretório
     local top_dir=$(find "$INSTALL_DIR/temp_extract" -maxdepth 1 -mindepth 1 -type d | head -1)
     
     if [ -n "$top_dir" ]; then
@@ -244,10 +285,10 @@ instalar_wine() {
 
     if ! validar_wine_instalacao; then
         diagnosticar_estrutura
-        erro "FALHA: Proton não foi instalado corretamente."
+        erro "FALHA: $tipo_display não foi instalado corretamente."
     fi
 
-    ok "Proton-GE instalado com sucesso!"
+    ok "$tipo_display instalado com sucesso!"
 }
 
 # ============================================================================
@@ -276,11 +317,14 @@ detectar_arquitetura_exe() {
 # ============================================================================
 exibir_logo
 
+# Selecionar tipo de wine
+selecionar_wine_type
+
 if ! validar_wine_instalacao; then
-    instalar_wine
+    instalar_wine "$WINE_TYPE"
 fi
 
-# Detectar estrutura Proton
+# Detectar estrutura Wine/Proton
 PROTON_BINARY=""
 if [ -f "$INSTALL_DIR/proton" ]; then
     PROTON_BINARY="$INSTALL_DIR/proton"
@@ -302,10 +346,10 @@ ok "Wine: $WINE_BIN"
 ok "Proton: ${PROTON_BINARY:-[não usado]}"
 
 # ============================================================================
-# VARIÁVEIS DE AMBIENTE - CRÍTICAS PARA PROTON
+# VARIÁVEIS DE AMBIENTE - CRÍTICAS PARA WINE/PROTON
 # ============================================================================
 
-# Para Proton, LD_LIBRARY_PATH DEVE vir ANTES
+# Para Wine/Proton, LD_LIBRARY_PATH DEVE vir ANTES
 export LD_LIBRARY_PATH="$INSTALL_DIR/lib64:$INSTALL_DIR/lib:${LD_LIBRARY_PATH:-}"
 export PATH="$INSTALL_DIR/bin:$PATH"
 
@@ -313,14 +357,14 @@ export PATH="$INSTALL_DIR/bin:$PATH"
 export WINELOADER="$WINE_BIN"
 export WINESERVER="$INSTALL_DIR/bin/wineserver"
 
-# DirectX integrado no Proton
+# DirectX integrado
 export DXVK_HUD=off
 export STAGING_SHARED_MEMORY=1
 
 # Sobrescrita de DLLs - IMPORTANTE: deixar nativas
 export WINEDLLOVERRIDES="winemenubuilder=d;rpcss=n;midimap=n"
 
-# Force Proton usar suas libs
+# Force Proton/Wine usar suas libs
 export PROTON_NO_ESYNC=0
 export PROTON_USE_WINED3D=0
 
@@ -334,7 +378,8 @@ if [ -z "$DISPLAY" ]; then
     export DISPLAY=:0
 fi
 
-info "Modo: PROTON-GE com DXVK"
+local tipo_display=$([ "$WINE_TYPE" = "wine-ge" ] && echo "Wine-GE" || echo "Proton-GE")
+info "Modo: $tipo_display com DXVK"
 info "LD_LIBRARY_PATH: $INSTALL_DIR/lib64:lib"
 
 # Áudio
@@ -429,7 +474,7 @@ fi
 echo ""
 echo -e "${GREEN}╔═════════════════════════════════════════════╗${RESET}"
 echo -e "${GREEN}║ 🎮 $(basename "$SELECTED")${RESET}"
-echo -e "${GREEN}║ 🔧 $WINE_ARCH | 🚀 Proton-GE + DXVK${RESET}"
+echo -e "${GREEN}║ 🔧 $WINE_ARCH | 🚀 $tipo_display + DXVK${RESET}"
 echo -e "${GREEN}║ 📁 $GAME_NAME${RESET}"
 echo -e "${GREEN}╚═════════════════════════════════════════════╝${RESET}"
 echo ""
