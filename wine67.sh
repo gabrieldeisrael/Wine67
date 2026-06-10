@@ -156,6 +156,9 @@ else
     export WINE_DISABLE_FAST_SYNC=1
 fi
 
+# Desativa componentes de acessibilidade que fazem engines como a Unity crasharem
+export WINEDLLOVERRIDES="uiautomationcore=d;oleacc=d;$WINEDLLOVERRIDES"
+
 echo ""
 echo "Procurando jogos..."
 
