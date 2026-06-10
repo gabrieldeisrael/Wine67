@@ -2,7 +2,7 @@
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# detecta desktop em português ou inglês
+# Detecta desktop em português ou inglês
 if [ -d "$HOME/Área de Trabalho" ]; then
     DESKTOP="$HOME/Área de Trabalho"
 elif [ -d "$HOME/Desktop" ]; then
@@ -14,8 +14,6 @@ fi
 
 INSTALL_DIR="$HOME/.cache/wine67"
 WINE_BIN="$INSTALL_DIR/bin/wine"
-
-WINE_URL="https://github.com/Kron4ek/Wine-Builds/releases/download/11.10/wine-11.10-amd64-wow64.tar.xz"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
 CYAN='\033[0;36m'; BOLD='\033[1m'; DIM='\033[2m'; RESET='\033[0m'
@@ -40,6 +38,19 @@ spinner() {
     echo -ne "\r  ${GREEN}[✔]${RESET}  ${msg}\n"
 }
 
+# Pegar a URL estável mais recente do Kron4ek dinamicamente (Sem quebrar o script no futuro)
+obter_url_wine() {
+    local url
+    url=$(curl -s "https://api.github.com/repos/Kron4ek/Wine-Builds/releases/latest" | \
+          grep -o "https://github.com/Kron4ek/Wine-Builds/releases/download/.*/wine-.*-amd64-wow64.tar.xz" | head -n 1)
+    
+    # Fallback caso a API do GitHub esteja de mau humor
+    if [ -z "$url" ]; then
+        url="https://github.com/Kron4ek/Wine-Builds/releases/download/11.10/wine-11.10-amd64-wow64.tar.xz"
+    fi
+    echo "$url"
+}
+
 clear
 
 echo -e "${MAGENTA}${BOLD}"
@@ -54,18 +65,14 @@ echo -e "  ${DIM}Wine-Kron4ek wow64 Portable Launcher — sem sudo${RESET}"
 echo -e "  ${DIM}Base: $INSTALL_DIR${RESET}"
 echo ""
 
-command -v wget &>/dev/null || command -v curl &>/dev/null || erro "Instale wget ou curl"
+command -v curl &>/dev/null || erro "Instale o comando 'curl' para continuar."
 command -v tar  &>/dev/null || erro "tar não encontrado"
 
 mkdir -p "$INSTALL_DIR"
 
 baixar() {
     local url="$1" dest="$2" nome="$3"
-    if command -v wget &>/dev/null; then
-        wget -q -O "$dest" "$url" &
-    else
-        curl -L -s -o "$dest" "$url" &
-    fi
+    curl -L -s -o "$dest" "$url" &
     local dl_pid=$!
     spinner "$dl_pid" "Baixando $nome..."
     wait "$dl_pid"
@@ -76,7 +83,7 @@ baixar() {
 
 buscar_tar() {
     local resultado=""
-    for padrao in "wine-11.8-amd64-wow64.tar.xz" "wine-*.tar.xz" "wine-*.tar.gz" "wine-*.tar"; do
+    for padrao in "wine-*.tar.xz" "wine-*.tar.gz" "wine-*.tar"; do
         resultado=$(find "$SCRIPT_DIR" -maxdepth 3 -name "$padrao" 2>/dev/null | head -1)
         [ -n "$resultado" ] && echo "$resultado" && return
         resultado=$(find /media /run/media /mnt -maxdepth 5 -name "$padrao" 2>/dev/null | head -1)
@@ -90,9 +97,11 @@ instalar_wine() {
     GE_TAR=$(buscar_tar)
 
     if [ -n "$GE_TAR" ]; then
-        ok "Arquivo encontrado: $GE_TAR"
+        ok "Arquivo local encontrado: $GE_TAR"
     else
         GE_TAR="$INSTALL_DIR/wine-kron4ek.tar.xz"
+        local WINE_URL
+        WINE_URL=$(obter_url_wine)
         baixar "$WINE_URL" "$GE_TAR" "Wine-Kron4ek wow64"
     fi
 
@@ -125,9 +134,27 @@ fi
 ok "Wine: $WINE_BIN"
 ok "Versão: $("$WINE_BIN" --version 2>/dev/null || echo 'desconhecida')"
 
-# configura ambiente do wine
-export LD_LIBRARY_PATH="$INSTALL_DIR/lib:$INSTALL_DIR/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+# --- GESTÃO INVISÍVEL DE AMBIENTE (O usuário não precisa ver isso) ---
+export LD_LIBRARY_PATH="$INSTALL_DIR/lib:$INSTALL_DIR/lib64:${LD_LIBRARY_PATH:-}"
+export PATH="$INSTALL_DIR/bin:$PATH"
+export WINELOADER="$WINE_BIN"
+export WINESERVER="$INSTALL_DIR/bin/wineserver"
+
+# Compatibilidade oculta para Wayland
+if [ "$XDG_SESSION_TYPE" = "wayland" ]; then
+    export GDK_BACKEND=x11
+    export QT_QPA_PLATFORM=xcb
+fi
+
 [ -z "$DISPLAY" ] && export DISPLAY=:0
+
+# Otimizações invisíveis de performance (Esync/Fsync se o Kernel suportar)
+if grep -qw "futex_waitv" /proc/kallsyms 2>/dev/null || [ -e /dev/futex-waitv ]; then
+    export WINEESYNC=1
+    export WINEFSYNC=1
+else
+    export WINE_DISABLE_FAST_SYNC=1
+fi
 
 echo ""
 echo "Procurando jogos..."
@@ -170,22 +197,32 @@ fi
 [ -z "$SELECTED" ] && erro "Nenhum arquivo selecionado."
 [ ! -f "$SELECTED" ] && erro "Arquivo não encontrado: '$SELECTED'"
 
-# prefix por jogo
+# Prefixo isolado por jogo
 GAME_NAME="$(basename "$SELECTED" .exe | tr -cd '[:alnum:]_-')"
 export WINEPREFIX="$INSTALL_DIR/prefixes/$GAME_NAME"
-mkdir -p "$WINEPREFIX"
+
+# Se o prefixo não existe, inicializa de forma limpa antes de rodar o jogo
+if [ ! -f "$WINEPREFIX/system.reg" ]; then
+    mkdir -p "$WINEPREFIX"
+    info "Inicializando ambiente do jogo pela primeira vez..."
+    WINEARCH=win64 "$WINE_BIN" wineboot -i &>/dev/null &
+    boot_pid=$!
+    spinner "$boot_pid" "Configurando garrafa Wine..."
+    wait "$boot_pid"
+fi
 
 echo ""
 echo -e "${GREEN}Iniciando: $(basename "$SELECTED")${RESET}"
 echo ""
 
-# configura áudio via PipeWire/PulseAudio
+# Configura áudio via PipeWire/PulseAudio
 PULSE_SOCKET=$(pactl info 2>/dev/null | grep 'Server String' | awk '{print $3}')
 if [ -n "$PULSE_SOCKET" ]; then
     export PULSE_SERVER="unix:$PULSE_SOCKET"
 fi
 
-"$WINE_BIN" "$SELECTED"
+# Executa o jogo de forma limpa
+WINEARCH=win64 "$WINE_BIN" "$SELECTED"
 
 EXIT=$?
 echo ""
