@@ -156,8 +156,13 @@ else
     export WINE_DISABLE_FAST_SYNC=1
 fi
 
-# Desativa componentes de acessibilidade que fazem engines como a Unity crasharem
-export WINEDLLOVERRIDES="uiautomationcore=d;oleacc=d;$WINEDLLOVERRIDES"
+# 1. Força o Wine a usar as versões embutidas (builtin) dessas DLLs específicas
+# Isso resolve o erro de "couldn't load in-process dll"
+export WINEDLLOVERRIDES="uiautomationcore=b;oleacc=b;tabtip.exe=d;$WINEDLLOVERRIDES"
+
+# 2. Desativa o ecossistema de acessibilidade do próprio Linux para que o Wine não tente mapeá-lo
+export NO_AT_BRIDGE=1
+export QT_ACCESSIBILITY=0
 
 echo ""
 echo "Procurando jogos..."
