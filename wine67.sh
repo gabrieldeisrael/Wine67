@@ -156,11 +156,10 @@ else
     export WINE_DISABLE_FAST_SYNC=1
 fi
 
-# 1. Força o Wine a usar as versões embutidas (builtin) dessas DLLs específicas
-# Isso resolve o erro de "couldn't load in-process dll"
-export WINEDLLOVERRIDES="uiautomationcore=b;oleacc=b;tabtip.exe=d;$WINEDLLOVERRIDES"
+# Volta a desativar as DLLs (já que elas não existem no Wine-Kron4ek)
+export WINEDLLOVERRIDES="uiautomationcore=d;oleacc=d;tabtip.exe=d;winemenubuilder=d;rpcss=n;midimap=n;steam_api=b,n"
 
-# 2. Desativa o ecossistema de acessibilidade do próprio Linux para que o Wine não tente mapeá-lo
+# Desativa o ecossistema de acessibilidade do próprio Linux para que o Wine não tente mapeá-lo
 export NO_AT_BRIDGE=1
 export QT_ACCESSIBILITY=0
 
@@ -229,8 +228,8 @@ if [ -n "$PULSE_SOCKET" ]; then
     export PULSE_SERVER="unix:$PULSE_SOCKET"
 fi
 
-# Executa o jogo de forma limpa
-WINEARCH=win64 "$WINE_BIN" "$SELECTED"
+# A MÁGICA AQUI: Adicionando parâmetros agressivos contra a Unity
+WINEARCH=win64 "$WINE_BIN" "$SELECTED" -force-d3d11 -nolog -batchmode 2>/dev/null
 
 EXIT=$?
 echo ""
