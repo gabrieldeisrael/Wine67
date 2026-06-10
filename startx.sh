@@ -27,6 +27,7 @@ MAGENTA='\033[0;35m'; BLUE='\033[0;34m'; WHITE='\033[1;37m'
 DESKTOP_SESSION="${DESKTOP_SESSION:-xfce}"
 XDG_SESSION_TYPE="${XDG_SESSION_TYPE:-x11}"
 WINE_ARCH="win64"
+WINE_ARCH_SUPPORT="wow64"  # Default: wow64 (64-bit + 32-bit), "win64", "win32"
 MAX_RETRIES=3
 RETRY_DELAY=5
 WINE_TYPE=""
@@ -153,6 +154,28 @@ selecionar_modo() {
         1) WINE_TYPE="proton-ge"; ok "Modo: Proton-GE" ;;
         2) WINE_TYPE="wine-ge";   ok "Modo: Wine-GE"   ;;
         *) erro "Opção inválida: '$WINE_CHOICE'" ;;
+    esac
+    echo ""
+}
+
+# ============================================================================
+# MENU DE SELEÇÃO DE ARQUITETURA
+# ============================================================================
+selecionar_arquitetura() {
+    echo -e "  ${CYAN}${BOLD}Selecione suporte de arquitetura:${RESET}"
+    echo ""
+    echo -e "  ${YELLOW}[1]${RESET}  ${BOLD}WoW64${RESET} (64-bit + 32-bit) ${DIM}— melhor compatibilidade universal${RESET}"
+    echo -e "  ${YELLOW}[2]${RESET}  ${BOLD}64-bit puro${RESET}           ${DIM}— apenas aplicativos 64-bit${RESET}"
+    echo -e "  ${YELLOW}[3]${RESET}  ${BOLD}32-bit puro${RESET}           ${DIM}— apenas aplicativos 32-bit${RESET}"
+    echo ""
+    echo -ne "  ${CYAN}Escolha (1, 2 ou 3): ${RESET}"
+    read -r ARCH_CHOICE
+
+    case "$ARCH_CHOICE" in
+        1) WINE_ARCH_SUPPORT="wow64"; ok "Modo: WoW64 (64-bit + 32-bit)" ;;
+        2) WINE_ARCH_SUPPORT="win64"; ok "Modo: 64-bit puro" ;;
+        3) WINE_ARCH_SUPPORT="win32"; ok "Modo: 32-bit puro" ;;
+        *) erro "Opção inválida: '$ARCH_CHOICE'" ;;
     esac
     echo ""
 }
@@ -359,20 +382,85 @@ instalar() {
 }
 
 # ============================================================================
-# DETECTAR ARQUITETURA DO .EXE
+# DETECTAR ARQUITETURA DO .EXE (MELHORADO)
 # ============================================================================
 detectar_arquitetura_exe() {
     local exe="$1"
+    local arch=""
+
+    # Método 1: comando 'file'
     if command -v file >/dev/null 2>&1; then
         local file_info
         file_info=$(file "$exe" 2>/dev/null)
-        if echo "$file_info" | grep -qi "x86-64\|x86_64\|64-bit"; then
+        
+        if echo "$file_info" | grep -qi "x86-64\|x86_64\|64-bit\|x64"; then
             echo "win64"; return 0
-        elif echo "$file_info" | grep -qi "Intel 80386\|32-bit\|PE32 "; then
+        elif echo "$file_info" | grep -qi "Intel 80386\|32-bit\|PE32 \|i386"; then
             echo "win32"; return 0
         fi
     fi
+
+    # Método 2: análise de headers PE (Portable Executable)
+    if command -v od >/dev/null 2>&1; then
+        # Verifica assinatura PE em offset 0x3C
+        local pe_offset
+        pe_offset=$(od -An -tx4 -N64 "$exe" 2>/dev/null | head -1 | awk '{print $10}')
+        
+        if [ -n "$pe_offset" ]; then
+            # Lê machine type no offset PE+4
+            local machine_type
+            machine_type=$(od -An -tx2 -j $((0x${pe_offset:0:2}04 + 4)) -N2 "$exe" 2>/dev/null | tr -d ' ')
+            
+            case "$machine_type" in
+                8664) echo "win64"; return 0 ;;  # x86-64
+                014c) echo "win32"; return 0 ;;  # i386
+                aa64) echo "win64"; return 0 ;;  # ARM64
+            esac
+        fi
+    fi
+
+    # Padrão seguro: win64
     echo "win64"
+}
+
+# ============================================================================
+# DETECTAR SUPORTE A MULTILIB (lib32 + lib64)
+# ============================================================================
+detectar_multilib() {
+    # Verifica se o Wine foi compilado com suporte a 32-bit
+    if [ -d "$INSTALL_DIR/lib" ] && [ -d "$INSTALL_DIR/lib64" ]; then
+        return 0  # Ambas presentes = suporte completo
+    fi
+    if [ -d "$INSTALL_DIR/lib32" ] && [ -d "$INSTALL_DIR/lib64" ]; then
+        return 0  # lib32 + lib64
+    fi
+    return 1  # Sem suporte a 32-bit
+}
+
+# ============================================================================
+# CONFIGURAR VARIÁVEIS PARA WoW64 (32-bit em 64-bit)
+# ============================================================================
+configurar_wow64() {
+    # WoW64: 64-bit prefix com suporte a 32-bit via /drive_c/windows/syswow64
+    if ! detectar_multilib; then
+        aviso "Instalação Wine sem suporte a 32-bit (lib32) — usando 64-bit puro"
+        WINE_ARCH_SUPPORT="win64"
+        return 1
+    fi
+
+    info "Configurando WoW64 (64-bit + 32-bit)..."
+
+    # Usa wine64 como principal
+    WINE_BIN="$INSTALL_DIR/bin/wine64"
+    
+    # Configura paths para 32-bit libs
+    if [ -d "$INSTALL_DIR/lib32" ]; then
+        export LD_LIBRARY_PATH="$INSTALL_DIR/lib32:$INSTALL_DIR/lib64:$INSTALL_DIR/lib:${LD_LIBRARY_PATH:-}"
+    else
+        export LD_LIBRARY_PATH="$INSTALL_DIR/lib64:$INSTALL_DIR/lib:${LD_LIBRARY_PATH:-}"
+    fi
+
+    return 0
 }
 
 # ============================================================================
@@ -380,6 +468,7 @@ detectar_arquitetura_exe() {
 # ============================================================================
 exibir_logo
 selecionar_modo
+selecionar_arquitetura
 
 # Instala se necessário
 if ! validar_instalacao; then
@@ -560,8 +649,30 @@ fi
 [ ! -f "$SELECTED" ] && erro "Arquivo não encontrado: '$SELECTED'"
 
 DETECTED_ARCH=$(detectar_arquitetura_exe "$SELECTED")
-WINE_ARCH="$DETECTED_ARCH"
-info "Arquitetura detectada: $WINE_ARCH"
+info "Arquitetura do exe detectada: $DETECTED_ARCH"
+
+# ============================================================================
+# DETERMINAR ARQUITETURA FINAL DO PREFIX
+# ============================================================================
+case "$WINE_ARCH_SUPPORT" in
+    wow64)
+        # WoW64: sempre usar win64 (que suporta 32-bit via syswow64)
+        WINE_ARCH="win64"
+        info "Modo WoW64: usando prefix 64-bit com suporte a 32-bit"
+        configurar_wow64
+        ;;
+    win64)
+        WINE_ARCH="win64"
+        info "Modo 64-bit puro: apenas suporte a aplicativos 64-bit"
+        ;;
+    win32)
+        WINE_ARCH="win32"
+        info "Modo 32-bit puro: apenas suporte a aplicativos 32-bit"
+        # Usa wine ao invés de wine64
+        WINE_BIN="$INSTALL_DIR/bin/wine"
+        [ ! -f "$WINE_BIN" ] && WINE_BIN="$INSTALL_DIR/bin/wine64"
+        ;;
+esac
 
 GAME_NAME="$(basename "$SELECTED" .exe | tr -cd '[:alnum:]_-')"
 export WINEPREFIX="$WINE67_DIR/prefixes/$GAME_NAME"
@@ -600,7 +711,7 @@ if [ -f "$WINEPREFIX/system.reg" ]; then
         rm -rf "$WINEPREFIX"
         mkdir -p "$WINEPREFIX"
     elif [ "$existing_arch" != "$WINE_ARCH" ]; then
-        aviso "Prefix existente é '$existing_arch' mas o exe precisa de '$WINE_ARCH'."
+        aviso "Prefix existente é '$existing_arch' mas você escolheu '$WINE_ARCH'."
         aviso "Recriando prefix com arquitetura correta ($WINE_ARCH)..."
         rm -rf "$WINEPREFIX"
         mkdir -p "$WINEPREFIX"
@@ -620,7 +731,8 @@ fi
 echo ""
 echo -e "  ${GREEN}╔══════════════════════════════════════════════════════╗${RESET}"
 echo -e "  ${GREEN}║  🎮  $(basename "$SELECTED")${RESET}"
-echo -e "  ${GREEN}║  🔧  Arch: $WINE_ARCH   |   $MODO_LABEL + DXVK${RESET}"
+echo -e "  ${GREEN}║  🔧  Arch: $WINE_ARCH (modo: $WINE_ARCH_SUPPORT)${RESET}"
+echo -e "  ${GREEN}║  🚀  $MODO_LABEL + DXVK${RESET}"
 echo -e "  ${GREEN}║  📁  Prefix: $GAME_NAME${RESET}"
 echo -e "  ${GREEN}╚══════════════════════════════════════════════════════╝${RESET}"
 echo ""
