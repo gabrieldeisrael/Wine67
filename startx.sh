@@ -51,9 +51,7 @@ spinner() {
     echo -ne "\r  ${GREEN}[✔]${RESET}  ${msg}\n"
 }
 
-# ============================================================================
-# LOGO COM ANIMAÇÃO HORIZONTAL (scroll marquee) — v3
-# ============================================================================
+
 exibir_logo() {
     command -v clear >/dev/null 2>&1 && clear || printf '\033[2J\033[H'
 
@@ -64,11 +62,10 @@ exibir_logo() {
     local L4="  ╚███╔███╔╝██║██║ ╚████║███████╗ ╚██████╔╝    ██║    "
     local L5="   ╚══╝╚══╝ ╚═╝╚═╝  ╚═══╝╚══════╝  ╚═════╝     ╚═╝   "
 
-    # Largura visual da logo: cada bloco/box char ocupa 1 coluna (mas tem 3 bytes UTF-8).
-    # wc -m conta chars Unicode, que corresponde a colunas para esses símbolos.
+
     local LOGO_W
     LOGO_W=$(printf '%s' "$L0" | wc -m 2>/dev/null)
-    # wc -m pode incluir o newline implícito; garantir valor mínimo sensato
+
     [ "${LOGO_W:-0}" -lt 10 ] && LOGO_W=54
 
     local TERM_W
@@ -77,9 +74,7 @@ exibir_logo() {
     local CENTER_POS=$(( (TERM_W - LOGO_W) / 2 ))
     [ $CENTER_POS -lt 0 ] && CENTER_POS=0
 
-    # Função auxiliar: imprime uma linha do logo na coluna X, sem ultrapassar TERM_W.
-    # Usa ESC[<row>;<col>H para posicionamento absoluto — sem depender de "subir N linhas".
-    # O autowrap é DESLIGADO (ESC[?7l) para que texto além da borda seja cortado, não quebrado.
+
     _logo_frame() {
         local col=$1  # coluna de início (1-based para tput cup)
         local row
@@ -92,7 +87,6 @@ exibir_logo() {
             esac
             # Posiciona cursor na linha (2+row-1) coluna col (ambos 1-based)
             printf '\033[%d;%dH' "$(( row + 1 ))" "$col1"
-            # Apaga até o fim da linha, depois imprime — evita fantasmas de frames anteriores
             printf '\033[K'
             printf '%b' "${MAGENTA}${BOLD}${line}${RESET}"
         done
@@ -100,12 +94,9 @@ exibir_logo() {
 
     # Desliga autowrap para que linhas longas sejam cortadas em vez de quebradas
     printf '\033[?7l'
-    # Oculta cursor
     tput civis 2>/dev/null || true
-    # Trap: sempre restaura terminal ao sair (Ctrl+C, erro, etc.)
     trap 'printf "\033[?7h"; tput cnorm 2>/dev/null || true; printf "%b" "${RESET}"; trap - EXIT INT TERM' EXIT INT TERM
 
-    # Limpa as 7 primeiras linhas (1 vazia + 6 da logo) com posicionamento absoluto
     local r
     for r in 1 2 3 4 5 6 7; do
         printf '\033[%d;1H\033[K' "$r"
@@ -126,7 +117,6 @@ exibir_logo() {
     tput cnorm 2>/dev/null || true
     trap - EXIT INT TERM
 
-    # Move cursor para linha 9 (abaixo das 6 linhas de logo + margem)
     printf '\033[9;1H'
 
     echo ""
@@ -138,9 +128,8 @@ exibir_logo() {
     echo ""
 }
 
-# ============================================================================
-# MENU DE SELEÇÃO DE MODO
-# ============================================================================
+
+# MENU DE SELECAO DE MODO
 selecionar_modo() {
     echo -e "  ${CYAN}${BOLD}Selecione o modo de execução:${RESET}"
     echo ""
@@ -158,9 +147,7 @@ selecionar_modo() {
     echo ""
 }
 
-# ============================================================================
-# MENU DE SELEÇÃO DE ARQUITETURA
-# ============================================================================
+# MENU DE SELECAO DE ARQUITETURA
 selecionar_arquitetura() {
     echo -e "  ${CYAN}${BOLD}Selecione suporte de arquitetura:${RESET}"
     echo ""
@@ -180,9 +167,8 @@ selecionar_arquitetura() {
     echo ""
 }
 
-# ============================================================================
-# VALIDAÇÕES DE DEPENDÊNCIAS
-# ============================================================================
+
+# VALIDAR DEPENDENCIAS
 if ! command -v curl >/dev/null 2>&1; then
     erro "curl não instalado!\n  Ubuntu/Debian: apt install curl\n  Fedora: dnf install curl"
 fi
@@ -192,9 +178,7 @@ fi
 
 mkdir -p "$INSTALL_DIR"
 
-# ============================================================================
-# DETECTAR URLs (stdout limpo — info/aviso vão para stderr)
-# ============================================================================
+# DETECTAR URLs 
 obter_url() {
     local tipo="$1"
 
@@ -228,9 +212,6 @@ obter_url() {
     echo "https://github.com/${repo}/releases/download/${fallback_tag}/${fallback_file}"
 }
 
-# ============================================================================
-# DOWNLOAD COM RETRY
-# ============================================================================
 baixar() {
     local url="$1"
     local dest="$2"
@@ -259,9 +240,7 @@ baixar() {
     erro "Falha ao baixar $nome após $MAX_RETRIES tentativas"
 }
 
-# ============================================================================
-# BUSCAR .TAR LOCAL (pendrive, pasta, etc)
-# ============================================================================
+# ACHAR TAR
 buscar_tar() {
     local tipo="$1"
     local resultado=""
@@ -281,9 +260,7 @@ buscar_tar() {
     return 1
 }
 
-# ============================================================================
-# VALIDAR INSTALAÇÃO
-# ============================================================================
+# VALIDAR INSTALACAO
 validar_instalacao() {
     if [ ! -f "$INSTALL_DIR/bin/wine64" ] && \
        [ ! -f "$INSTALL_DIR/bin/wine"   ] && \
@@ -306,9 +283,7 @@ diagnosticar_estrutura() {
     du -sh "$INSTALL_DIR" 2>/dev/null | sed 's/^/    /'
 }
 
-# ============================================================================
-# INSTALAR
-# ============================================================================
+
 instalar() {
     local tipo="$1"
     local nome_display
@@ -381,14 +356,12 @@ instalar() {
     ok "$nome_display instalado com sucesso!"
 }
 
-# ============================================================================
-# DETECTAR ARQUITETURA DO .EXE (MELHORADO)
-# ============================================================================
+# DETECTAR ARQUITETURA DO .EXE 
 detectar_arquitetura_exe() {
     local exe="$1"
     local arch=""
 
-    # Método 1: comando 'file'
+  
     if command -v file >/dev/null 2>&1; then
         local file_info
         file_info=$(file "$exe" 2>/dev/null)
@@ -400,7 +373,7 @@ detectar_arquitetura_exe() {
         fi
     fi
 
-    # Método 2: análise de headers PE (Portable Executable)
+ 
     if command -v od >/dev/null 2>&1; then
         # Verifica assinatura PE em offset 0x3C
         local pe_offset
@@ -423,9 +396,7 @@ detectar_arquitetura_exe() {
     echo "win64"
 }
 
-# ============================================================================
-# DETECTAR SUPORTE A MULTILIB (lib32 + lib64)
-# ============================================================================
+
 detectar_multilib() {
     # Verifica se o Wine foi compilado com suporte a 32-bit
     if [ -d "$INSTALL_DIR/lib" ] && [ -d "$INSTALL_DIR/lib64" ]; then
@@ -437,11 +408,8 @@ detectar_multilib() {
     return 1  # Sem suporte a 32-bit
 }
 
-# ============================================================================
-# CONFIGURAR VARIÁVEIS PARA WoW64 (32-bit em 64-bit)
-# ============================================================================
+
 configurar_wow64() {
-    # WoW64: 64-bit prefix com suporte a 32-bit via /drive_c/windows/syswow64
     if ! detectar_multilib; then
         aviso "Instalação Wine sem suporte a 32-bit (lib32) — usando 64-bit puro"
         WINE_ARCH_SUPPORT="win64"
@@ -450,7 +418,7 @@ configurar_wow64() {
 
     info "Configurando WoW64 (64-bit + 32-bit)..."
 
-    # Usa wine64 como principal
+    
     WINE_BIN="$INSTALL_DIR/bin/wine64"
     
     # Configura paths para 32-bit libs
@@ -463,9 +431,7 @@ configurar_wow64() {
     return 0
 }
 
-# ============================================================================
-# INÍCIO
-# ============================================================================
+# INICIO
 exibir_logo
 selecionar_modo
 selecionar_arquitetura
@@ -475,9 +441,7 @@ if ! validar_instalacao; then
     instalar "$WINE_TYPE"
 fi
 
-# ============================================================================
-# DETECTAR BINÁRIOS
-# ============================================================================
+# DETECTAR BINARIOS
 PROTON_BINARY=""
 if [ -f "$INSTALL_DIR/proton" ]; then
     PROTON_BINARY="$INSTALL_DIR/proton"
@@ -496,9 +460,7 @@ chmod +x "$WINE_BIN" 2>/dev/null || true
 ok "Wine bin: $WINE_BIN"
 [ -n "$PROTON_BINARY" ] && ok "Proton:   $PROTON_BINARY"
 
-# ============================================================================
-# VARIÁVEIS DE AMBIENTE
-# ============================================================================
+# VARIAVEIS DE AMBIENTE
 export LD_LIBRARY_PATH="$INSTALL_DIR/lib64:$INSTALL_DIR/lib:${LD_LIBRARY_PATH:-}"
 export PATH="$INSTALL_DIR/bin:$PATH"
 export WINELOADER="$WINE_BIN"
@@ -510,9 +472,7 @@ export WINEDLLOVERRIDES="winemenubuilder=d;rpcss=n;midimap=n"
 if [ "$WINE_TYPE" = "proton-ge" ]; then
     export PROTON_USE_WINED3D=0
 
-    # --- Fix 1: wineserver server-side synchronization ---
-    # Verifica suporte a futex_waitv (esync/fsync nativo).
-    # Também checa /dev/futex-waitv (algumas distros expõem assim).
+
     _has_futex2() {
         grep -qw "futex_waitv" /proc/kallsyms 2>/dev/null && return 0
         [ -e /dev/futex-waitv ] && return 0
@@ -532,7 +492,7 @@ if [ "$WINE_TYPE" = "proton-ge" ]; then
         aviso "Kernel sem futex_waitv — esync/fsync desativados (evita server-side sync)"
     fi
 else
-    # Wine-GE: mesma lógica
+   
     _has_futex2() {
         grep -qw "futex_waitv" /proc/kallsyms 2>/dev/null && return 0
         [ -e /dev/futex-waitv ] && return 0
@@ -549,16 +509,13 @@ else
     fi
 fi
 
-# --- Fix 2: RLIMIT_NICE <=20, unable to use safe priority ---
-# Wine precisa de nice negativo para prioridade de processo.
-# ulimit -e 40 eleva o limite sem precisar de sudo (40 = nice -20).
-# Também suprime o aviso via WINE_DO_NOT_SET_NICE se não for possível elevar.
+
 if ulimit -e 40 2>/dev/null; then
     : # elevou com sucesso
 else
     export WINE_DO_NOT_SET_NICE=1
 fi
-# Desabilita real-time priority do Wine para evitar erros de permissão relacionados
+
 export STAGING_WRITECOPY=1
 
 if [ "$XDG_SESSION_TYPE" = "wayland" ]; then
@@ -578,9 +535,8 @@ elif [ -S "${XDG_RUNTIME_DIR:-/run/user/1000}/pipewire-0" ] 2>/dev/null; then
     ok "Áudio: PipeWire"
 fi
 
-# ============================================================================
+
 # BUSCAR JOGOS (.EXE)
-# ============================================================================
 echo ""
 echo -e "  ${DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
 echo ""
@@ -651,9 +607,8 @@ fi
 DETECTED_ARCH=$(detectar_arquitetura_exe "$SELECTED")
 info "Arquitetura do exe detectada: $DETECTED_ARCH"
 
-# ============================================================================
+
 # DETERMINAR ARQUITETURA FINAL DO PREFIX
-# ============================================================================
 case "$WINE_ARCH_SUPPORT" in
     wow64)
         # WoW64: sempre usar win64 (que suporta 32-bit via syswow64)
@@ -678,21 +633,17 @@ GAME_NAME="$(basename "$SELECTED" .exe | tr -cd '[:alnum:]_-')"
 export WINEPREFIX="$WINE67_DIR/prefixes/$GAME_NAME"
 mkdir -p "$WINEPREFIX"
 
-# --- Fix 3: prefix 32/64bit mismatch ---
-# Lê a arquitetura do prefix de forma robusta:
-# system.reg pode ter '#arch=win32' ou '"#arch"="win32"' dependendo da versão do Wine.
-# Também verifica via pasta drive_c/windows/syswow64 (só existe em win64).
+
 _prefix_arch() {
     local reg="$WINEPREFIX/system.reg"
     local arch=""
 
     if [ -f "$reg" ]; then
-        # Tenta formato: #arch=win32 ou #arch=win64
         arch=$(grep -m1 '#arch=' "$reg" 2>/dev/null \
                | sed 's/.*#arch=\([a-z0-9]*\).*/\1/' | tr -d '\r\n ')
     fi
 
-    # Fallback: presença de syswow64 indica prefix win64
+    # Fallback presença de syswow64 indica prefix win64
     if [ -z "$arch" ]; then
         if [ -d "$WINEPREFIX/drive_c/windows/syswow64" ]; then
             arch="win64"
@@ -737,9 +688,8 @@ echo -e "  ${GREEN}║  📁  Prefix: $GAME_NAME${RESET}"
 echo -e "  ${GREEN}╚══════════════════════════════════════════════════════╝${RESET}"
 echo ""
 
-# ============================================================================
-# EXECUTAR
-# ============================================================================
+
+# FINALMENTE EXECUTAR
 WINEARCH="$WINE_ARCH" \
 WINEPREFIX="$WINEPREFIX" \
 LD_LIBRARY_PATH="$INSTALL_DIR/lib64:$INSTALL_DIR/lib:${LD_LIBRARY_PATH:-}" \
