@@ -158,8 +158,7 @@ instalar_wine() {
     wait "$tar_pid" || erro "Falha ao extrair. Delete '$INSTALL_DIR' e tente novamente."
 
     find "$INSTALL_DIR/bin" -type f -exec chmod +x {} \; 2>/dev/null
-
-    # FIX: valida se o binário realmente existe após extração
+    
     if [ ! -f "$WINE_BIN" ]; then
         # Tentar encontrar o wine em subpastas
         local found
@@ -175,8 +174,6 @@ instalar_wine() {
     ok "Wine instalado com sucesso!"
 }
 
-
-# DETECTAR SE É JOGO UNITY
 detectar_unity() {
     local exe_dir
     exe_dir="$(dirname "$1")"
