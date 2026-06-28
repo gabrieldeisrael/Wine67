@@ -1,6 +1,6 @@
 Wine67 / StartX
 
-O Wine67/StartX é um script utilitário para Debian e Ubuntu que permite executar arquivos .exe diretamente de um pendrive (formatado em ExFAT) sem necessidade de privilégios de sudo (root).
+O Wine67/StartX é um script utilitário para Linux que permite executar arquivos .exe diretamente de um pendrive (formatado em ExFAT) sem necessidade de privilégios de sudo (root).
 Como Usar:
 
     Acesse o diretório: Abra o terminal na pasta onde os arquivos do StartX/Wine67 estão localizados.
