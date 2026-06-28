@@ -2,16 +2,6 @@
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Detecta desktop em português ou inglês
-if [ -d "$HOME/Área de Trabalho" ]; then
-    DESKTOP="$HOME/Área de Trabalho"
-elif [ -d "$HOME/Desktop" ]; then
-    DESKTOP="$HOME/Desktop"
-else
-    mkdir -p "$HOME/Desktop"
-    DESKTOP="$HOME/Desktop"
-fi
-
 INSTALL_DIR="$HOME/.cache/wine67"
 WINE_BIN="$INSTALL_DIR/bin/wine"
 
