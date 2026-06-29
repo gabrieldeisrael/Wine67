@@ -1,5 +1,5 @@
 #!/bin/bash
-#h
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 INSTALL_DIR="$HOME/.cache/wine67"
