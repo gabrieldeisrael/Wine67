@@ -1,718 +1,314 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 
-set -e
+# teste.sh - Reescrito: instalador / reinstalador minimalista para Wine-GE / Proton-GE
+# Objetivo: Apenas 2 ações (1=Instalar, 2=Reinstalar). Sem SUDO. Compatível com Linux Mint 20.04.
+# Suporta criação correta de prefix win32/win64 (Wow64) e instalação local do DXVK (sem sudo).
+# Instalação por usuário em: $HOME/Área de Trabalho/Wine67 (suporta Desktop em pt/en)
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Detecta desktop em português ou inglês
-if [ -d "$HOME/Área de Trabalho" ]; then
-    DESKTOP="$HOME/Área de Trabalho"
-elif [ -d "$HOME/Desktop" ]; then
-    DESKTOP="$HOME/Desktop"
-else
-    mkdir -p "$HOME/Desktop"
-    DESKTOP="$HOME/Desktop"
-fi
+# Detect desktop path (PT/EN)
+DESKTOP="$HOME/Desktop"
+[ -d "$HOME/Área de Trabalho" ] && DESKTOP="$HOME/Área de Trabalho"
 
-WINE67_DIR="$DESKTOP/Wine67"
-mkdir -p "$WINE67_DIR"
+BASE_DIR="$DESKTOP/Wine67"
+INSTALL_DIR="$BASE_DIR/wine"
+DXVK_DIR="$BASE_DIR/dxvk"
+PREFIXES_DIR="$BASE_DIR/prefixes"
+mkdir -p "$INSTALL_DIR" "$DXVK_DIR" "$PREFIXES_DIR"
 
-INSTALL_DIR="$WINE67_DIR/wine"
-WINE_BIN="$INSTALL_DIR/bin/wine64"
+# Colors
+RED='\033[0;31m' GREEN='\033[0;32m' YELLOW='\033[1;33m' CYAN='\033[0;36m'
+BOLD='\033[1m' RESET='\033[0m'
 
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
-CYAN='\033[0;36m'; BOLD='\033[1m'; DIM='\033[2m'; RESET='\033[0m'
-MAGENTA='\033[0;35m'; BLUE='\033[0;34m'; WHITE='\033[1;37m'
+log_err()  { echo -e "${RED}✖ $*${RESET}"  >&2; }
+log_ok()   { echo -e "${GREEN}✔ $*${RESET}"; }
+log_warn() { echo -e "${YELLOW}⚠ $*${RESET}"; }
+log_info() { echo -e "${CYAN}➜ $*${RESET}"; }
 
-DESKTOP_SESSION="${DESKTOP_SESSION:-xfce}"
-XDG_SESSION_TYPE="${XDG_SESSION_TYPE:-x11}"
-WINE_ARCH="win64"
 MAX_RETRIES=3
-RETRY_DELAY=5
-WINE_TYPE=""
+RETRY_DELAY=4
 
-erro()  { echo -e "${RED}❌  $1${RESET}"; exit 1; }
-ok()    { echo -e "${GREEN}✔   $1${RESET}"; }
-info()  { echo -e "${CYAN}➜   $1${RESET}"; }
-aviso() { echo -e "${YELLOW}⚠   $1${RESET}"; }
-
+# Small spinner while a background PID is running
 spinner() {
-    local pid=$1
-    local msg="${2:-Carregando...}"
-    local spin='/-\|'
-    local i=0
-    while kill -0 "$pid" 2>/dev/null; do
-        local c="${spin:$i:1}"
-        echo -ne "\r  ${CYAN}[${c}]${RESET}  ${msg}"
-        i=$(( (i+1) % ${#spin} ))
-        sleep 0.1
-    done
-    echo -ne "\r  ${GREEN}[✔]${RESET}  ${msg}\n"
+  local pid=$1; local msg=${2:-Processing}
+  local chars='/-\\|'
+  i=0
+  while kill -0 "$pid" 2>/dev/null; do
+    printf '\r  [%c] %s' "${chars:i%${#chars}:1}" "$msg"
+    sleep 0.08; i=$((i+1))
+  done
+  printf '\r  [✔] %s\n' "$msg"
 }
 
-# ============================================================================
-# LOGO COM ANIMAÇÃO HORIZONTAL (scroll marquee) — v3
-# ============================================================================
-exibir_logo() {
-    command -v clear >/dev/null 2>&1 && clear || printf '\033[2J\033[H'
-
-    local L0="  ██╗    ██╗██╗███╗   ██╗███████╗  ██████╗  ███████╗  "
-    local L1="  ██║    ██║██║████╗  ██║██╔════╝ ██╔════╝  ╚════██║  "
-    local L2="  ██║ █╗ ██║██║██╔██╗ ██║█████╗   ███████╗      ██╔╝  "
-    local L3="  ██║███╗██║██║██║╚██╗██║██╔══╝   ██╔═══██╗    ██╔╝   "
-    local L4="  ╚███╔███╔╝██║██║ ╚████║███████╗ ╚██████╔╝    ██║    "
-    local L5="   ╚══╝╚══╝ ╚═╝╚═╝  ╚═══╝╚══════╝  ╚═════╝     ╚═╝   "
-
-    # Largura visual da logo: cada bloco/box char ocupa 1 coluna (mas tem 3 bytes UTF-8).
-    # wc -m conta chars Unicode, que corresponde a colunas para esses símbolos.
-    local LOGO_W
-    LOGO_W=$(printf '%s' "$L0" | wc -m 2>/dev/null)
-    # wc -m pode incluir o newline implícito; garantir valor mínimo sensato
-    [ "${LOGO_W:-0}" -lt 10 ] && LOGO_W=54
-
-    local TERM_W
-    TERM_W=$(tput cols 2>/dev/null || echo 80)
-
-    local CENTER_POS=$(( (TERM_W - LOGO_W) / 2 ))
-    [ $CENTER_POS -lt 0 ] && CENTER_POS=0
-
-    # Função auxiliar: imprime uma linha do logo na coluna X, sem ultrapassar TERM_W.
-    # Usa ESC[<row>;<col>H para posicionamento absoluto — sem depender de "subir N linhas".
-    # O autowrap é DESLIGADO (ESC[?7l) para que texto além da borda seja cortado, não quebrado.
-    _logo_frame() {
-        local col=$1  # coluna de início (1-based para tput cup)
-        local row
-        local line
-        local col1=$(( col + 1 ))   # tput cup usa 0-based; printf \033[r;cH usa 1-based
-        for row in 1 2 3 4 5 6; do
-            case $row in
-                1) line="$L0" ;; 2) line="$L1" ;; 3) line="$L2" ;;
-                4) line="$L3" ;; 5) line="$L4" ;; 6) line="$L5" ;;
-            esac
-            # Posiciona cursor na linha (2+row-1) coluna col (ambos 1-based)
-            printf '\033[%d;%dH' "$(( row + 1 ))" "$col1"
-            # Apaga até o fim da linha, depois imprime — evita fantasmas de frames anteriores
-            printf '\033[K'
-            printf '%b' "${MAGENTA}${BOLD}${line}${RESET}"
-        done
-    }
-
-    # Desliga autowrap para que linhas longas sejam cortadas em vez de quebradas
-    printf '\033[?7l'
-    # Oculta cursor
-    tput civis 2>/dev/null || true
-    # Trap: sempre restaura terminal ao sair (Ctrl+C, erro, etc.)
-    trap 'printf "\033[?7h"; tput cnorm 2>/dev/null || true; printf "%b" "${RESET}"; trap - EXIT INT TERM' EXIT INT TERM
-
-    # Limpa as 7 primeiras linhas (1 vazia + 6 da logo) com posicionamento absoluto
-    local r
-    for r in 1 2 3 4 5 6 7; do
-        printf '\033[%d;1H\033[K' "$r"
-    done
-
-    # Animação: logo entra pela direita (col = TERM_W) e para em CENTER_POS
-    local step
-    for (( step=TERM_W; step>CENTER_POS; step-=2 )); do
-        _logo_frame "$step"
-        sleep 0.02
-    done
-
-    # Frame final: posição central exata
-    _logo_frame "$CENTER_POS"
-
-    # Restaura autowrap e cursor; posiciona cursor logo abaixo da logo
-    printf '\033[?7h'
-    tput cnorm 2>/dev/null || true
-    trap - EXIT INT TERM
-
-    # Move cursor para linha 9 (abaixo das 6 linhas de logo + margem)
-    printf '\033[9;1H'
-
-    echo ""
-    echo -e "  ${WHITE}${BOLD}Portable Game Launcher — SEM SUDO${RESET}"
-    echo -e "  ${DIM}Base: $WINE67_DIR${RESET}"
-    echo -e "  ${DIM}Desktop: $DESKTOP_SESSION  |  Sessão: $XDG_SESSION_TYPE${RESET}"
-    echo ""
-    echo -e "  ${DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
-    echo ""
-}
-
-# ============================================================================
-# MENU DE SELEÇÃO DE MODO
-# ============================================================================
-selecionar_modo() {
-    echo -e "  ${CYAN}${BOLD}Selecione o modo de execução:${RESET}"
-    echo ""
-    echo -e "  ${YELLOW}[1]${RESET}  ${BOLD}Proton-GE${RESET}  ${DIM}— melhor compatibilidade, jogos Steam${RESET}"
-    echo -e "  ${YELLOW}[2]${RESET}  ${BOLD}Wine-GE${RESET}    ${DIM}— leve, direto, jogos nativos Windows${RESET}"
-    echo -e "  ${YELLOW}[3]${RESET}  ${BOLD}Reinstalar${RESET}  ${DIM}— apaga Wine/Proton e prefixes, baixa tudo de novo${RESET}"
-    echo ""
-    echo -ne "  ${CYAN}Escolha (1, 2 ou 3): ${RESET}"
-    read -r WINE_CHOICE
-
-    case "$WINE_CHOICE" in
-        1) WINE_TYPE="proton-ge"; ok "Modo: Proton-GE" ;;
-        2) WINE_TYPE="wine-ge";   ok "Modo: Wine-GE"   ;;
-        3) reinstalar_tudo ;;
-        *) erro "Opção inválida: '$WINE_CHOICE'" ;;
-    esac
-    echo ""
-}
-
-# ============================================================================
-# REINSTALAR DO ZERO (apaga Wine/Proton + prefixes, baixa de novo)
-# ============================================================================
-reinstalar_tudo() {
-    echo ""
-    aviso "Isso vai APAGAR:"
-    echo -e "    ${DIM}- $INSTALL_DIR (Wine/Proton instalado)${RESET}"
-    echo -e "    ${DIM}- $WINE67_DIR/prefixes (todos os prefixes/jogos configurados)${RESET}"
-    echo ""
-    echo -ne "  ${RED}Confirma reinstalação completa? (s/N): ${RESET}"
-    read -r CONFIRM_REINSTALL
-
-    case "$CONFIRM_REINSTALL" in
-        s|S|sim|SIM|y|Y|yes|YES) ;;
-        *) info "Reinstalação cancelada."; selecionar_modo; return ;;
-    esac
-
-    echo ""
-    echo -e "  ${CYAN}${BOLD}Qual engine reinstalar?${RESET}"
-    echo ""
-    echo -e "  ${YELLOW}[1]${RESET}  ${BOLD}Proton-GE${RESET}"
-    echo -e "  ${YELLOW}[2]${RESET}  ${BOLD}Wine-GE${RESET}"
-    echo ""
-    echo -ne "  ${CYAN}Escolha (1 ou 2): ${RESET}"
-    read -r REINSTALL_CHOICE
-
-    case "$REINSTALL_CHOICE" in
-        1) WINE_TYPE="proton-ge" ;;
-        2) WINE_TYPE="wine-ge"   ;;
-        *) erro "Opção inválida: '$REINSTALL_CHOICE'" ;;
-    esac
-
-    info "Removendo instalação anterior..."
-    rm -rf "$INSTALL_DIR"
-    mkdir -p "$INSTALL_DIR"
-
-    info "Removendo prefixes antigos..."
-    rm -rf "$WINE67_DIR/prefixes"
-
-    ok "Tudo limpo. Reinstalando $([ "$WINE_TYPE" = "proton-ge" ] && echo "Proton-GE" || echo "Wine-GE")..."
-    echo ""
-
-    instalar "$WINE_TYPE"
-    FORCAR_REINSTALL_FEITO=1
-    ok "Modo: $([ "$WINE_TYPE" = "proton-ge" ] && echo "Proton-GE" || echo "Wine-GE") (reinstalado)"
-}
-
-# ============================================================================
-# VALIDAÇÕES DE DEPENDÊNCIAS
-# ============================================================================
-if ! command -v curl >/dev/null 2>&1; then
-    erro "curl não instalado!\n  Ubuntu/Debian: apt install curl\n  Fedora: dnf install curl"
-fi
-if ! command -v tar >/dev/null 2>&1; then
-    erro "tar não instalado!"
-fi
-
-mkdir -p "$INSTALL_DIR"
-
-# ============================================================================
-# DETECTAR URLs (stdout limpo — info/aviso vão para stderr)
-# ============================================================================
-obter_url() {
-    local tipo="$1"
-
-    if [ "$tipo" = "proton-ge" ]; then
-        local repo="GloriousEggroll/proton-ge-custom"
-        local fallback_tag="GE-Proton10-34"
-        local fallback_file="GE-Proton10-34.tar.gz"
-    else
-        local repo="GloriousEggroll/wine-ge-custom"
-        local fallback_tag="GE-Proton8-26"
-        local fallback_file="wine-lutris-GE-Proton8-26-x86_64.tar.xz"
-    fi
-
-    info "Detectando versão mais recente de $tipo..." >&2
-
-    local tag
-    tag=$(curl -s --max-time 15 "https://api.github.com/repos/${repo}/releases/latest" \
-          | grep '"tag_name"' | head -1 | cut -d'"' -f4)
-
-    if [ -n "$tag" ]; then
-        info "Versão detectada: $tag" >&2
-        if [ "$tipo" = "proton-ge" ]; then
-            echo "https://github.com/${repo}/releases/download/${tag}/${tag}.tar.gz"
-        else
-            echo "https://github.com/${repo}/releases/download/${tag}/wine-lutris-${tag}-x86_64.tar.xz"
-        fi
+# Simple safe downloader with retries
+download() {
+  local url="$1" dest="$2" name="${3:-file}"
+  local attempt=1
+  while [ $attempt -le $MAX_RETRIES ]; do
+    log_info "Baixando $name (tentativa $attempt/$MAX_RETRIES)"
+    rm -f "$dest"
+    if curl -L --fail --connect-timeout 15 --max-time 600 -# -o "$dest" "$url" 2>/dev/null; then
+      if [ -s "$dest" ]; then
+        log_ok "$name baixado: $(du -h "$dest" | cut -f1)"
         return 0
+      fi
     fi
-
-    aviso "API indisponível — usando fallback: $fallback_tag" >&2
-    echo "https://github.com/${repo}/releases/download/${fallback_tag}/${fallback_file}"
+    rm -f "$dest"
+    log_warn "Falha ao baixar $name"
+    attempt=$((attempt+1))
+    sleep $RETRY_DELAY
+  done
+  log_err "Não foi possível baixar $name após $MAX_RETRIES tentativas"
+  return 1
 }
 
-# ============================================================================
-# DOWNLOAD COM RETRY
-# ============================================================================
-baixar() {
-    local url="$1"
-    local dest="$2"
-    local nome="$3"
-    local attempt=1
-
-    while [ $attempt -le $MAX_RETRIES ]; do
-        info "Baixando $nome (tentativa $attempt/$MAX_RETRIES)..."
-        rm -f "$dest"
-
-        if curl -L --max-time 600 -# -o "$dest" "$url" 2>&1; then
-            if [ -f "$dest" ] && [ -s "$dest" ]; then
-                ok "Download completo! ($(du -h "$dest" | cut -f1))"
-                return 0
-            fi
-        fi
-
-        rm -f "$dest"
-        if [ $attempt -lt $MAX_RETRIES ]; then
-            aviso "Falha na tentativa $attempt. Aguardando ${RETRY_DELAY}s..."
-            sleep $RETRY_DELAY
-        fi
-        attempt=$((attempt + 1))
-    done
-
-    erro "Falha ao baixar $nome após $MAX_RETRIES tentativas"
+# Obtém URL de release mais recente do GloriousEggroll (Proton-GE ou Wine-GE)
+get_ge_url() {
+  local tipo="$1"
+  local repo tag file
+  if [ "$tipo" = "proton-ge" ]; then
+    repo="GloriousEggroll/proton-ge-custom"
+    # release asset usually named: <tag>.tar.gz
+    tag=$(curl -sS --max-time 10 "https://api.github.com/repos/${repo}/releases/latest" | grep '"tag_name"' | head -1 | cut -d'"' -f4 || true)
+    if [ -n "$tag" ]; then
+      echo "https://github.com/${repo}/releases/download/${tag}/${tag}.tar.gz"
+      return 0
+    fi
+    # fallback
+    echo "https://github.com/${repo}/releases/download/GE-Proton10-34/GE-Proton10-34.tar.gz"
+  else
+    repo="GloriousEggroll/wine-ge-custom"
+    tag=$(curl -sS --max-time 10 "https://api.github.com/repos/${repo}/releases/latest" | grep '"tag_name"' | head -1 | cut -d'"' -f4 || true)
+    if [ -n "$tag" ]; then
+      echo "https://github.com/${repo}/releases/download/${tag}/wine-lutris-${tag}-x86_64.tar.xz"
+      return 0
+    fi
+    # fallback
+    echo "https://github.com/${repo}/releases/download/GE-Proton8-26/wine-lutris-GE-Proton8-26-x86_64.tar.xz"
+  fi
 }
 
-# ============================================================================
-# BUSCAR .TAR LOCAL (pendrive, pasta, etc)
-# ============================================================================
-buscar_tar() {
-    local tipo="$1"
-    local resultado=""
-
-    if [ "$tipo" = "proton-ge" ]; then
-        local padroes=("GE-Proton*.tar.gz" "Proton-*.tar.gz" "proton-*.tar.xz")
-    else
-        local padroes=("wine-lutris-*.tar.xz" "wine-lutris-*.tar.gz" "Wine-*.tar.gz" "wine-ge-*.tar.xz")
+# Obtém URL e instala DXVK localmente (no diretório DXVK_DIR)
+install_dxvk_local() {
+  # Latest DXVK release (tags like v1.10.3)
+  local api_url="https://api.github.com/repos/doitsujin/dxvk/releases/latest"
+  local tag
+  tag=$(curl -sS --max-time 10 "$api_url" | grep '"tag_name"' | head -1 | cut -d'"' -f4 || true)
+  local dxvk_tar="dxvk.tar.gz"
+  if [ -n "$tag" ]; then
+    local asset_url="https://github.com/doitsujin/dxvk/releases/download/${tag}/dxvk-${tag#v}.tar.gz"
+    if download "$asset_url" "$DXVK_DIR/$dxvk_tar" "DXVK (${tag})"; then
+      tar -xzf "$DXVK_DIR/$dxvk_tar" -C "$DXVK_DIR"
+      rm -f "$DXVK_DIR/$dxvk_tar"
+      log_ok "DXVK ${tag} extraído em $DXVK_DIR"
+      return 0
     fi
-
-    for padrao in "${padroes[@]}"; do
-        resultado=$(find "$SCRIPT_DIR" -maxdepth 3 -name "$padrao" 2>/dev/null | head -1)
-        [ -n "$resultado" ] && echo "$resultado" && return 0
-        resultado=$(find /media /run/media /mnt -maxdepth 5 -name "$padrao" 2>/dev/null | head -1 2>/dev/null)
-        [ -n "$resultado" ] && echo "$resultado" && return 0
-    done
-    return 1
+  fi
+  log_warn "Não foi possível obter DXVK automaticamente. Você pode colocar um tar.gz de DXVK em $DXVK_DIR e reexecutar."
+  return 1
 }
 
-# ============================================================================
-# VALIDAR INSTALAÇÃO
-# ============================================================================
-validar_instalacao() {
-    if [ ! -f "$INSTALL_DIR/bin/wine64" ] && \
-       [ ! -f "$INSTALL_DIR/bin/wine"   ] && \
-       [ ! -f "$INSTALL_DIR/proton"     ]; then
-        return 1
-    fi
-    if [ ! -d "$INSTALL_DIR/lib" ] && [ ! -d "$INSTALL_DIR/lib64" ]; then
-        return 1
-    fi
+# Verifica ferramentas mínimas
+for cmd in curl tar grep awk sed file; do
+  if ! command -v "$cmd" >/dev/null 2>&1; then
+    log_err "Comando ausente: $cmd. Instale-o (ex: sudo apt install $cmd) e rode novamente. Este script NÃO usa sudo por si só."
+    exit 1
+  fi
+done
+
+# Extrai o conteúdo do tar para INSTALL_DIR (sem sudo)
+extract_ge() {
+  local tarfile="$1"
+  log_info "Extraindo para $INSTALL_DIR"
+  rm -rf "$INSTALL_DIR"/tmp_extract || true
+  mkdir -p "$INSTALL_DIR"/tmp_extract
+  if [[ "$tarfile" == *.tar.xz ]]; then
+    tar -xJf "$tarfile" -C "$INSTALL_DIR"/tmp_extract
+  else
+    tar -xzf "$tarfile" -C "$INSTALL_DIR"/tmp_extract
+  fi
+  # move top-level contents
+  local top
+  top=$(find "$INSTALL_DIR/tmp_extract" -mindepth 1 -maxdepth 1 -type d | head -n1 || true)
+  if [ -n "$top" ]; then
+    shopt -s dotglob
+    mv "$top"/* "$INSTALL_DIR"/ 2>/dev/null || true
+    mv "$top"/.[!.]* "$INSTALL_DIR"/ 2>/dev/null || true
+    shopt -u dotglob
+  else
+    # if tar contained files directly
+    mv "$INSTALL_DIR/tmp_extract"/* "$INSTALL_DIR"/ 2>/dev/null || true
+  fi
+  rm -rf "$INSTALL_DIR/tmp_extract"
+  # make main binaries executable
+  find "$INSTALL_DIR" -type f -executable -print >/dev/null 2>&1 || true
+}
+
+# Validar instalação atual
+valid_install() {
+  if [ -x "$INSTALL_DIR/bin/wine64" ] || [ -x "$INSTALL_DIR/bin/wine" ] || [ -x "$INSTALL_DIR/proton" ]; then
     return 0
+  fi
+  return 1
 }
 
-diagnosticar_estrutura() {
-    info "Diagnosticando estrutura..."
-    echo ""
-    echo "  📁 Conteúdo de $INSTALL_DIR:"
-    ls -1 "$INSTALL_DIR" 2>/dev/null | head -20 | sed 's/^/    /' || echo "    [vazio]"
-    echo ""
-    echo "  📦 Tamanho:"
-    du -sh "$INSTALL_DIR" 2>/dev/null | sed 's/^/    /'
+# Cria prefix com suporte correto a win32/win64 (Wow64):
+# - Para win64: usa WINEARCH=win64 + wine64 wineboot
+# - Para win32: usa WINEARCH=win32 + wineboot
+create_prefix() {
+  local name="$1" arch="$2" # arch = win64|win32
+  local p="$PREFIXES_DIR/$name"
+  if [ -d "$p" ]; then
+    log_warn "Prefix já existe: $p"
+    return 0
+  fi
+  mkdir -p "$p"
+
+  local winebin="${INSTALL_DIR}/bin/wine"
+  local wine64bin="${INSTALL_DIR}/bin/wine64"
+  if [ -x "$wine64bin" ]; then
+    winebin="$wine64bin"
+  elif [ -x "$INSTALL_DIR/proton" ]; then
+    winebin="$INSTALL_DIR/proton"
+  fi
+
+  log_info "Criando prefix $name ($arch) usando $winebin"
+
+  if [ "$arch" = "win64" ]; then
+    # Two-step: try env-clean wineboot with wine64 first
+    env -i HOME="$HOME" PATH="$INSTALL_DIR/bin:$PATH" DISPLAY="${DISPLAY:-:0}" WINEPREFIX="$p" WINEARCH=win64 "$wine64bin" wineboot -i >/dev/null 2>&1 &
+    pid=$!
+    spinner $pid "Inicializando prefix win64"
+    wait $pid || true
+    # Check for syswow64
+    if [ ! -d "$p/drive_c/windows/syswow64" ]; then
+      log_warn "Prefix win64 não gerou syswow64. Tentando método alternativo..."
+      rm -rf "$p" && mkdir -p "$p"
+      (export WINEARCH=win64; export WINEPREFIX="$p"; export PATH="$INSTALL_DIR/bin:$PATH"; wine64 wineboot -i) >/dev/null 2>&1 || true
+    fi
+  else
+    # win32
+    env -i HOME="$HOME" PATH="$INSTALL_DIR/bin:$PATH" DISPLAY="${DISPLAY:-:0}" WINEPREFIX="$p" WINEARCH=win32 "$winebin" wineboot -i >/dev/null 2>&1 &
+    pid=$!
+    spinner $pid "Inicializando prefix win32"
+    wait $pid || true
+  fi
+
+  # Log básico
+  if [ -f "$p/system.reg" ]; then
+    log_ok "Prefix criado em: $p"
+  else
+    log_warn "Pareceu criar o prefix, mas system.reg ausente. Verifique manualmente: $p"
+  fi
+
+  # Se DXVK foi baixado, tente instalar no prefix com o setup_dxvk.sh
+  local dxvk_setup
+  dxvk_setup=$(find "$DXVK_DIR" -maxdepth 2 -name setup_dxvk.sh | head -n1 || true)
+  if [ -n "$dxvk_setup" ] && [ -x "$dxvk_setup" ]; then
+    log_info "Instalando DXVK no prefix $name"
+    (export WINEPREFIX="$p"; export PATH="$INSTALL_DIR/bin:$PATH"; bash "$dxvk_setup" install) >/dev/null 2>&1 || true
+    log_ok "Tentativa de instalar DXVK concluída (verifique logs se necessário)."
+  else
+    log_warn "setup_dxvk.sh não encontrado em $DXVK_DIR — pulei instalação do DXVK no prefix"
+  fi
 }
 
-# ============================================================================
-# INSTALAR
-# ============================================================================
-instalar() {
-    local tipo="$1"
-    local nome_display
-    nome_display=$([ "$tipo" = "proton-ge" ] && echo "Proton-GE" || echo "Wine-GE")
-
-    info "Instalando $nome_display..."
-
-    if [ -d "$INSTALL_DIR" ] && [ "$(ls -A "$INSTALL_DIR" 2>/dev/null)" ]; then
-        aviso "Removendo instalação anterior..."
-        rm -rf "$INSTALL_DIR"
-        mkdir -p "$INSTALL_DIR"
-    fi
-
-    local GE_TAR
-    if GE_TAR=$(buscar_tar "$tipo"); then
-        ok "Arquivo local encontrado: $GE_TAR"
-    else
-        local DL_URL
-        DL_URL=$(obter_url "$tipo")
-        local ext=".tar.gz"
-        [[ "$DL_URL" == *.tar.xz ]] && ext=".tar.xz"
-        GE_TAR="$INSTALL_DIR/wine_download${ext}"
-        baixar "$DL_URL" "$GE_TAR" "$nome_display"
-    fi
-
-    local TAR_FLAG TEST_FLAG
-    case "$GE_TAR" in
-        *.tar.xz) TAR_FLAG="-xJf"; TEST_FLAG="-tJf" ;;
-        *.tar.gz) TAR_FLAG="-xzf"; TEST_FLAG="-tzf" ;;
-        *)        TAR_FLAG="-xf";  TEST_FLAG="-tf"   ;;
-    esac
-
-    info "Verificando integridade do arquivo..."
-    if ! tar "$TEST_FLAG" "$GE_TAR" >/dev/null 2>&1; then
-        rm -f "$GE_TAR"
-        erro "Arquivo corrompido ou incompleto."
-    fi
-    ok "Arquivo verificado."
-
-    info "Extraindo $nome_display..."
-    rm -rf "$INSTALL_DIR/temp_extract"
-    mkdir -p "$INSTALL_DIR/temp_extract"
-
-    tar "$TAR_FLAG" "$GE_TAR" -C "$INSTALL_DIR/temp_extract" &
-    local tar_pid=$!
-    spinner "$tar_pid" "Extraindo $nome_display..."
-    wait "$tar_pid" || true
-
-    info "Reorganizando estrutura..."
-    local top_dir
-    top_dir=$(find "$INSTALL_DIR/temp_extract" -maxdepth 1 -mindepth 1 -type d | head -1)
-
-    if [ -n "$top_dir" ]; then
-        mv "$top_dir"/* "$INSTALL_DIR/" 2>/dev/null || true
-        mv "$top_dir"/.[!.]* "$INSTALL_DIR/" 2>/dev/null || true
-    fi
-
-    rm -rf "$INSTALL_DIR/temp_extract"
-    rm -f "$GE_TAR"
-
-    info "Configurando permissões..."
-    find "$INSTALL_DIR" -type f \( -name "wine*" -o -name "proton" \) \
-        -exec chmod +x {} \; 2>/dev/null || true
-
-    if ! validar_instalacao; then
-        diagnosticar_estrutura
-        erro "FALHA: $nome_display não foi instalado corretamente."
-    fi
-
-    ok "$nome_display instalado com sucesso!"
+# Remove instalação completa (reinstalar)
+reinstall_all() {
+  log_warn "Removendo instalação em $INSTALL_DIR e prefixes em $PREFIXES_DIR"
+  rm -rf "$INSTALL_DIR" "$PREFIXES_DIR" "$DXVK_DIR"
+  mkdir -p "$INSTALL_DIR" "$PREFIXES_DIR" "$DXVK_DIR"
+  log_ok "Removido. Pronto para reinstalar."
 }
 
-# ============================================================================
-# DETECTAR ARQUITETURA DO .EXE
-# ============================================================================
-detectar_arquitetura_exe() {
-    local exe="$1"
-    if command -v file >/dev/null 2>&1; then
-        local file_info
-        file_info=$(file "$exe" 2>/dev/null)
-        if echo "$file_info" | grep -qi "x86-64\|x86_64\|64-bit"; then
-            echo "win64"; return 0
-        elif echo "$file_info" | grep -qi "Intel 80386\|32-bit\|PE32 "; then
-            echo "win32"; return 0
-        fi
-    fi
-    echo "win64"
+# Menu principal (somente 1=Instalar e 2=Reinstalar)
+main_menu() {
+  cat <<EOF
+
+${BOLD}Wine67 Minimal Installer (Mint 20.04) - sem sudo${RESET}
+Local: $BASE_DIR
+
+Escolha:
+  ${YELLOW}1${RESET} - Instalar (download e configurar Wine-GE/Proton-GE + DXVK opcional)
+  ${YELLOW}2${RESET} - Reinstalar (limpar e instalar novamente)
+  0 - Sair
+
+EOF
+  read -rp "Escolha: " opt
+  case "$opt" in
+    1) install_flow ;; 
+    2) reinstall_flow ;; 
+    0) log_info "Saindo."; exit 0 ;;
+    *) log_err "Opção inválida."; main_menu ;;
+  esac
 }
 
-# ============================================================================
-# INÍCIO
-# ============================================================================
-exibir_logo
-selecionar_modo
+install_flow() {
+  # Escolha engine
+  echo "\nEscolha engine a instalar:"
+  echo "  1) Wine-GE (padrão, leve e compatível)"
+  echo "  2) Proton-GE (Proton custom - pode ser maior)"
+  read -rp "Engine (1 ou 2) [1]: " eopt
+  eopt=${eopt:-1}
+  local tipo="wine-ge"
+  [ "$eopt" = "2" ] && tipo="proton-ge"
 
-# Instala se necessário
-if ! validar_instalacao; then
-    instalar "$WINE_TYPE"
-fi
+  if valid_install; then
+    log_warn "Parece já haver uma instalação em $INSTALL_DIR. Use opção 2 para reinstalar ou remova manualmente."
+    return 0
+  fi
 
-# ============================================================================
-# DETECTAR BINÁRIOS
-# ============================================================================
-PROTON_BINARY=""
-if [ -f "$INSTALL_DIR/proton" ]; then
-    PROTON_BINARY="$INSTALL_DIR/proton"
-    WINE_BIN="$INSTALL_DIR/bin/wine64"
-elif [ -f "$INSTALL_DIR/bin/wine64" ]; then
-    WINE_BIN="$INSTALL_DIR/bin/wine64"
-elif [ -f "$INSTALL_DIR/bin/wine" ]; then
-    WINE_BIN="$INSTALL_DIR/bin/wine"
-else
-    erro "Nenhum binário Wine/Proton encontrado em $INSTALL_DIR"
-fi
+  local url
+  url=$(get_ge_url "$tipo") || true
+  if [ -z "$url" ]; then
+    log_err "Não consegui detectar URL do $tipo"
+    return 1
+  fi
 
-chmod +x "$WINE_BIN" 2>/dev/null || true
-[ -n "$PROTON_BINARY" ] && chmod +x "$PROTON_BINARY" 2>/dev/null || true
+  local ext=".tar.gz"
+  [[ "$url" == *.tar.xz ]] && ext=".tar.xz"
+  local dest="$BASE_DIR/$(basename "$url")"
 
-ok "Wine bin: $WINE_BIN"
-[ -n "$PROTON_BINARY" ] && ok "Proton:   $PROTON_BINARY"
+  download "$url" "$dest" "$tipo" || return 1
+  extract_ge "$dest"
+  rm -f "$dest"
 
-# ============================================================================
-# VARIÁVEIS DE AMBIENTE
-# ============================================================================
-export LD_LIBRARY_PATH="$INSTALL_DIR/lib64:$INSTALL_DIR/lib:${LD_LIBRARY_PATH:-}"
-export PATH="$INSTALL_DIR/bin:$PATH"
-export WINELOADER="$WINE_BIN"
-export WINESERVER="$INSTALL_DIR/bin/wineserver"
-export DXVK_HUD=off
-export STAGING_SHARED_MEMORY=1
-export WINEDLLOVERRIDES="winemenubuilder=d;rpcss=n;midimap=n"
+  # baixar dxvk local (opcional)
+  echo "\nDeseja baixar DXVK e tentar instalá-lo localmente? (recomendado para jogos DirectX) [S/n]"
+  read -r dxopt
+  dxopt=${dxopt:-s}
+  if [[ "$dxopt" =~ ^[sSyY] ]]; then
+    install_dxvk_local || log_warn "DXVK não instalado automaticamente. Você pode colocar o tar.gz em $DXVK_DIR e recriar o prefix."
+  fi
 
-if [ "$WINE_TYPE" = "proton-ge" ]; then
-    export PROTON_USE_WINED3D=0
+  log_ok "Instalação do engine concluída. Criando um prefix de exemplo (opcional)."
 
-    # --- Fix 1: wineserver server-side synchronization ---
-    # Verifica suporte a futex_waitv (esync/fsync nativo).
-    # Também checa /dev/futex-waitv (algumas distros expõem assim).
-    _has_futex2() {
-        grep -qw "futex_waitv" /proc/kallsyms 2>/dev/null && return 0
-        [ -e /dev/futex-waitv ] && return 0
-        return 1
-    }
-    if _has_futex2; then
-        export PROTON_NO_ESYNC=0
-        export PROTON_NO_FSYNC=0
-        export WINEESYNC=1
-        export WINEFSYNC=1
-    else
-        export PROTON_NO_ESYNC=1
-        export PROTON_NO_FSYNC=1
-        export WINEESYNC=0
-        export WINEFSYNC=0
-        export WINE_DISABLE_FAST_SYNC=1
-        aviso "Kernel sem futex_waitv — esync/fsync desativados (evita server-side sync)"
-    fi
-else
-    # Wine-GE: mesma lógica
-    _has_futex2() {
-        grep -qw "futex_waitv" /proc/kallsyms 2>/dev/null && return 0
-        [ -e /dev/futex-waitv ] && return 0
-        return 1
-    }
-    if _has_futex2; then
-        export WINEESYNC=1
-        export WINEFSYNC=1
-    else
-        export WINEESYNC=0
-        export WINEFSYNC=0
-        export WINE_DISABLE_FAST_SYNC=1
-        aviso "Kernel sem futex_waitv — esync/fsync desativados"
-    fi
-fi
+  read -rp "Criar prefix de exemplo agora? Nome do prefix (ou vazio para pular): " prefix_name
+  if [ -n "$prefix_name" ]; then
+    echo "Escolha arquitetura do prefix: 1) 64-bit (recomendado para jogos 64)  2) 32-bit"
+    read -rp "Arquitetura (1/2) [1]: " a
+    a=${a:-1}
+    local arch=win64
+    [ "$a" != "1" ] && arch=win32
+    create_prefix "$prefix_name" "$arch"
+  fi
 
-# --- Fix 2: RLIMIT_NICE <=20, unable to use safe priority ---
-# Wine precisa de nice negativo para prioridade de processo.
-# ulimit -e 40 eleva o limite sem precisar de sudo (40 = nice -20).
-# Também suprime o aviso via WINE_DO_NOT_SET_NICE se não for possível elevar.
-if ulimit -e 40 2>/dev/null; then
-    : # elevou com sucesso
-else
-    export WINE_DO_NOT_SET_NICE=1
-fi
-# Desabilita real-time priority do Wine para evitar erros de permissão relacionados
-export STAGING_WRITECOPY=1
-
-if [ "$XDG_SESSION_TYPE" = "wayland" ]; then
-    aviso "Detectado Wayland — aplicando compatibilidade X11"
-    export GDK_BACKEND=x11
-    export QT_QPA_PLATFORM=xcb
-fi
-
-[ -z "${DISPLAY:-}" ] && export DISPLAY=:0
-
-MODO_LABEL=$([ "$WINE_TYPE" = "proton-ge" ] && echo "Proton-GE 🚀" || echo "Wine-GE 🍷")
-info "Modo ativo: $MODO_LABEL + DXVK"
-
-if command -v pactl >/dev/null 2>&1 && pactl info >/dev/null 2>&1; then
-    ok "Áudio: PulseAudio"
-elif [ -S "${XDG_RUNTIME_DIR:-/run/user/1000}/pipewire-0" ] 2>/dev/null; then
-    ok "Áudio: PipeWire"
-fi
-
-# ============================================================================
-# BUSCAR JOGOS (.EXE)
-# ============================================================================
-echo ""
-echo -e "  ${DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
-echo ""
-info "Escaneando diretórios em busca de jogos..."
-
-declare -a EXES
-declare -a SEARCH_PATHS=(
-    "$WINE67_DIR"
-    "$HOME/Downloads"
-    "$HOME/Descargas"
-    "$HOME/Transferências"
-    "/media"
-    "/mnt"
-    "$SCRIPT_DIR"
-)
-
-for search_path in "${SEARCH_PATHS[@]}"; do
-    if [ -d "$search_path" ]; then
-        while IFS= read -r exe_file; do
-            EXES+=("$exe_file")
-        done < <(find "$search_path" -maxdepth 10 -type f -name "*.exe" 2>/dev/null)
-    fi
-done
-
-declare -a UNIQUE_EXES
-declare -A SEEN_EXES
-for exe in "${EXES[@]+"${EXES[@]}"}"; do
-    if [ -z "${SEEN_EXES[$exe]:-}" ]; then
-        UNIQUE_EXES+=("$exe")
-        SEEN_EXES[$exe]=1
-    fi
-done
-
-IFS=$'\n' UNIQUE_EXES=($(sort <<<"${UNIQUE_EXES[*]+"${UNIQUE_EXES[*]}"}"))
-
-SELECTED=""
-if [ ${#UNIQUE_EXES[@]} -eq 0 ]; then
-    echo ""
-    aviso "Nenhum .exe encontrado automaticamente."
-    echo -ne "  ${CYAN}Informe o caminho do .exe: ${RESET}"
-    read -r SELECTED
-    SELECTED="${SELECTED//\'/}"; SELECTED="${SELECTED//\"/}"
-    SELECTED="${SELECTED# }";    SELECTED="${SELECTED% }"
-    [ -f "$SELECTED" ] || erro "Arquivo não encontrado: '$SELECTED'"
-else
-    echo ""
-    echo -e "  ${BOLD}${WHITE}Jogos encontrados:${RESET}"
-    echo ""
-    for i in "${!UNIQUE_EXES[@]}"; do
-        echo -e "  ${YELLOW}[$((i+1))]${RESET}  ${BOLD}$(basename "${UNIQUE_EXES[$i]}")${RESET}"
-        echo -e "        ${DIM}${UNIQUE_EXES[$i]}${RESET}"
-    done
-    echo ""
-    echo -ne "  ${CYAN}Escolha o número: ${RESET}"
-    read -r CHOICE
-
-    if [[ "$CHOICE" =~ ^[0-9]+$ ]] && \
-       [ "$CHOICE" -ge 1 ] && \
-       [ "$CHOICE" -le "${#UNIQUE_EXES[@]}" ]; then
-        SELECTED="${UNIQUE_EXES[$((CHOICE-1))]}"
-    else
-        erro "Opção inválida: '$CHOICE'"
-    fi
-fi
-
-[ ! -f "$SELECTED" ] && erro "Arquivo não encontrado: '$SELECTED'"
-
-DETECTED_ARCH=$(detectar_arquitetura_exe "$SELECTED")
-WINE_ARCH="$DETECTED_ARCH"
-info "Arquitetura detectada: $WINE_ARCH"
-
-GAME_NAME="$(basename "$SELECTED" .exe | tr -cd '[:alnum:]_-')"
-export WINEPREFIX="$WINE67_DIR/prefixes/$GAME_NAME"
-mkdir -p "$WINEPREFIX"
-
-# --- Fix 3: prefix 32/64bit mismatch (versão definitiva) ---
-# Em vez de tentar interpretar o conteúdo do system.reg (formato varia
-# entre versões do Wine e nem sempre é confiável), verificamos por
-# evidência estrutural: presença da pasta syswow64 só existe em prefixos
-# win64. Se o exe exige win64 e o prefix não tem syswow64, é win32 e
-# precisa ser recriado do zero.
-_is_prefix_win64() {
-    [ -d "$WINEPREFIX/drive_c/windows/syswow64" ]
+  log_ok "Instalação finalizada. Binários: $INSTALL_DIR/bin"
 }
 
-if [ -f "$WINEPREFIX/system.reg" ]; then
-    if [ "$WINE_ARCH" = "win64" ] && ! _is_prefix_win64; then
-        aviso "Prefix existente é 32-bit mas o jogo precisa de 64-bit."
-        aviso "Removendo prefix antigo e recriando como win64..."
-        rm -rf "$WINEPREFIX"
-        mkdir -p "$WINEPREFIX"
-    elif [ "$WINE_ARCH" = "win32" ] && _is_prefix_win64; then
-        aviso "Prefix existente é 64-bit mas o jogo precisa de 32-bit."
-        aviso "Removendo prefix antigo e recriando como win32..."
-        rm -rf "$WINEPREFIX"
-        mkdir -p "$WINEPREFIX"
-    fi
-fi
+reinstall_flow() {
+  read -rp "Confirma remoção completa de $INSTALL_DIR e prefixes? (s/N): " yn
+  case "$yn" in
+    s|S|y|Y|sim|SIM) ;;
+    *) log_info "Reinstalação cancelada."; return 0 ;;
+  esac
+  reinstall_all
+  install_flow
+}
 
-if [ ! -f "$WINEPREFIX/system.reg" ]; then
-    info "Criando prefix Windows ($WINE_ARCH)..."
+# Start
+main_menu
 
-    # Remove QUALQUER variável de arquitetura que possa estar vazando do
-    # ambiente do shell do usuário (ex: WINEARCH=win32 exportado em .bashrc,
-    # ou herdado de outra sessão Wine aberta antes).
-    unset WINEARCH WINEPREFIX_ARCH 2>/dev/null || true
-
-    WINEBOOT_LOG="/tmp/wineboot_${GAME_NAME}_$$.log"
-
-    env -i \
-        HOME="$HOME" \
-        PATH="$PATH" \
-        DISPLAY="${DISPLAY:-:0}" \
-        LD_LIBRARY_PATH="$LD_LIBRARY_PATH" \
-        WINEARCH="$WINE_ARCH" \
-        WINEPREFIX="$WINEPREFIX" \
-        WINEDLLOVERRIDES="mscoree=;mshtml=" \
-        WINEDEBUG=-all \
-        "$WINE_BIN" wineboot -i > "$WINEBOOT_LOG" 2>&1 &
-    boot_pid=$!
-    spinner "$boot_pid" "Inicializando ambiente Windows ($WINE_ARCH)..."
-    wait "$boot_pid" || true
-
-    # Valida que o prefix nasceu com a arquitetura correta
-    if [ "$WINE_ARCH" = "win64" ] && ! _is_prefix_win64; then
-        aviso "Primeira tentativa falhou (prefix nasceu 32-bit). Tentando método alternativo..."
-        rm -rf "$WINEPREFIX"
-        mkdir -p "$WINEPREFIX"
-
-        # Método alternativo: alguns builds de Wine-GE/Proton-GE só respeitam
-        # a arquitetura quando ela vem via WINE_ARCH e o prefix é criado com
-        # 'wine64' diretamente sem nenhuma variável extra no ambiente, usando
-        # o comando completo embutido no PATH do próprio Wine.
-        (
-            export WINEARCH="win64"
-            export WINEPREFIX="$WINEPREFIX"
-            export PATH="$INSTALL_DIR/bin:$PATH"
-            wine64 wineboot -i >> "$WINEBOOT_LOG" 2>&1
-        ) &
-        boot_pid=$!
-        spinner "$boot_pid" "Tentativa alternativa de inicialização..."
-        wait "$boot_pid" || true
-    fi
-
-    if [ "$WINE_ARCH" = "win64" ] && ! _is_prefix_win64; then
-        erro "Falha ao criar prefix 64-bit em duas tentativas.\n\n  Log do wineboot (últimas linhas):\n$(tail -20 "$WINEBOOT_LOG" 2>/dev/null | sed 's/^/    /')\n\n  Diagnóstico: o binário '$WINE_BIN' pode não suportar criação de prefixos win64 neste sistema.\n  Rode manualmente para confirmar: file \"$WINE_BIN\""
-    fi
-
-    rm -f "$WINEBOOT_LOG"
-    ok "Prefix pronto ($WINE_ARCH)"
-fi
-
-echo ""
-echo -e "  ${GREEN}╔══════════════════════════════════════════════════════╗${RESET}"
-echo -e "  ${GREEN}║  🎮  $(basename "$SELECTED")${RESET}"
-echo -e "  ${GREEN}║  🔧  Arch: $WINE_ARCH   |   $MODO_LABEL + DXVK${RESET}"
-echo -e "  ${GREEN}║  📁  Prefix: $GAME_NAME${RESET}"
-echo -e "  ${GREEN}╚══════════════════════════════════════════════════════╝${RESET}"
-echo ""
-
-# ============================================================================
-# EXECUTAR
-# ============================================================================
-WINEARCH="$WINE_ARCH" \
-WINEPREFIX="$WINEPREFIX" \
-LD_LIBRARY_PATH="$INSTALL_DIR/lib64:$INSTALL_DIR/lib:${LD_LIBRARY_PATH:-}" \
-"$WINE_BIN" "$SELECTED"
-
-EXIT=$?
-echo ""
-if [ $EXIT -eq 0 ]; then
-    ok "Jogo encerrado normalmente."
-else
-    aviso "Jogo encerrado com código de saída: $EXIT"
-fi
+exit 0
