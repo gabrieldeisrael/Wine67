@@ -1,6 +1,9 @@
 #!/bin/bash
-# get back to work bruh
-set -e
+# Portable Game Launcher — SEM SUDO
+# Corrigido e robustecido: checagem runtime 32-bit, detecção PE mais confiável,
+# evita RLIMIT_NICE, mensagens claras e melhor tratamento de extração/instalação.
+set -euo pipefail
+IFS=$'\n\t'
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -20,6 +23,7 @@ mkdir -p "$WINE67_DIR"
 INSTALL_DIR="$WINE67_DIR/wine"
 WINE_BIN="$INSTALL_DIR/bin/wine64"
 
+# Colors
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
 CYAN='\033[0;36m'; BOLD='\033[1m'; DIM='\033[2m'; RESET='\033[0m'
 MAGENTA='\033[0;35m'; BLUE='\033[0;34m'; WHITE='\033[1;37m'
@@ -40,7 +44,7 @@ aviso() { echo -e "${YELLOW}⚠   $1${RESET}"; }
 spinner() {
     local pid=$1
     local msg="${2:-Carregando...}"
-    local spin='/-\|'
+    local spin='/-\\|'
     local i=0
     while kill -0 "$pid" 2>/dev/null; do
         local c="${spin:$i:1}"
@@ -95,6 +99,7 @@ exibir_logo() {
     # Desliga autowrap para que linhas longas sejam cortadas em vez de quebradas
     printf '\033[?7l'
     tput civis 2>/dev/null || true
+    # Guarda o estado do trap e restaura no final
     trap 'printf "\033[?7h"; tput cnorm 2>/dev/null || true; printf "%b" "${RESET}"; trap - EXIT INT TERM' EXIT INT TERM
 
     local r
@@ -178,6 +183,9 @@ fi
 
 mkdir -p "$INSTALL_DIR"
 
+# -- Garantir que Wine não tente ajustar prioridade quando não permitido
+export WINE_DO_NOT_SET_NICE="${WINE_DO_NOT_SET_NICE:-1}"
+
 # DETECTAR URLs 
 obter_url() {
     local tipo="$1"
@@ -196,7 +204,7 @@ obter_url() {
 
     local tag
     tag=$(curl -s --max-time 15 "https://api.github.com/repos/${repo}/releases/latest" \
-          | grep '"tag_name"' | head -1 | cut -d'"' -f4)
+          | grep '"tag_name"' | head -1 | cut -d'"' -f4 || true)
 
     if [ -n "$tag" ]; then
         info "Versão detectada: $tag" >&2
@@ -220,7 +228,7 @@ baixar() {
 
     while [ $attempt -le $MAX_RETRIES ]; do
         info "Baixando $nome (tentativa $attempt/$MAX_RETRIES)..."
-        rm -f "$dest"
+        rm -f "$dest" || true
 
         if curl -L --max-time 600 -# -o "$dest" "$url" 2>&1; then
             if [ -f "$dest" ] && [ -s "$dest" ]; then
@@ -229,7 +237,7 @@ baixar() {
             fi
         fi
 
-        rm -f "$dest"
+        rm -f "$dest" || true
         if [ $attempt -lt $MAX_RETRIES ]; then
             aviso "Falha na tentativa $attempt. Aguardando ${RETRY_DELAY}s..."
             sleep $RETRY_DELAY
@@ -252,9 +260,9 @@ buscar_tar() {
     fi
 
     for padrao in "${padroes[@]}"; do
-        resultado=$(find "$SCRIPT_DIR" -maxdepth 3 -name "$padrao" 2>/dev/null | head -1)
+        resultado=$(find "$SCRIPT_DIR" -maxdepth 3 -name "$padrao" 2>/dev/null | head -1 || true)
         [ -n "$resultado" ] && echo "$resultado" && return 0
-        resultado=$(find /media /run/media /mnt -maxdepth 5 -name "$padrao" 2>/dev/null | head -1 2>/dev/null)
+        resultado=$(find /media /run/media /mnt -maxdepth 5 -name "$padrao" 2>/dev/null | head -1 || true)
         [ -n "$resultado" ] && echo "$resultado" && return 0
     done
     return 1
@@ -280,7 +288,7 @@ diagnosticar_estrutura() {
     ls -1 "$INSTALL_DIR" 2>/dev/null | head -20 | sed 's/^/    /' || echo "    [vazio]"
     echo ""
     echo "  📦 Tamanho:"
-    du -sh "$INSTALL_DIR" 2>/dev/null | sed 's/^/    /'
+    du -sh "$INSTALL_DIR" 2>/dev/null | sed 's/^/    /' || true
 }
 
 
@@ -291,7 +299,7 @@ instalar() {
 
     info "Instalando $nome_display..."
 
-    if [ -d "$INSTALL_DIR" ] && [ "$(ls -A "$INSTALL_DIR" 2>/dev/null)" ]; then
+    if [ -d "$INSTALL_DIR" ] && [ "$(ls -A "$INSTALL_DIR" 2>/dev/null || true)" ]; then
         aviso "Removendo instalação anterior..."
         rm -rf "$INSTALL_DIR"
         mkdir -p "$INSTALL_DIR"
@@ -318,13 +326,13 @@ instalar() {
 
     info "Verificando integridade do arquivo..."
     if ! tar "$TEST_FLAG" "$GE_TAR" >/dev/null 2>&1; then
-        rm -f "$GE_TAR"
+        rm -f "$GE_TAR" || true
         erro "Arquivo corrompido ou incompleto."
     fi
     ok "Arquivo verificado."
 
     info "Extraindo $nome_display..."
-    rm -rf "$INSTALL_DIR/temp_extract"
+    rm -rf "$INSTALL_DIR/temp_extract" || true
     mkdir -p "$INSTALL_DIR/temp_extract"
 
     tar "$TAR_FLAG" "$GE_TAR" -C "$INSTALL_DIR/temp_extract" &
@@ -334,15 +342,18 @@ instalar() {
 
     info "Reorganizando estrutura..."
     local top_dir
-    top_dir=$(find "$INSTALL_DIR/temp_extract" -maxdepth 1 -mindepth 1 -type d | head -1)
+    top_dir=$(find "$INSTALL_DIR/temp_extract" -maxdepth 1 -mindepth 1 -type d | head -1 || true)
 
     if [ -n "$top_dir" ]; then
+        # move preservando permissões; ignore erros de arquivos ocultos inexistentes
+        shopt -s dotglob 2>/dev/null || true
         mv "$top_dir"/* "$INSTALL_DIR/" 2>/dev/null || true
         mv "$top_dir"/.[!.]* "$INSTALL_DIR/" 2>/dev/null || true
+        shopt -u dotglob 2>/dev/null || true
     fi
 
-    rm -rf "$INSTALL_DIR/temp_extract"
-    rm -f "$GE_TAR"
+    rm -rf "$INSTALL_DIR/temp_extract" || true
+    rm -f "$GE_TAR" || true
 
     info "Configurando permissões..."
     find "$INSTALL_DIR" -type f \( -name "wine*" -o -name "proton" \) \
@@ -357,42 +368,56 @@ instalar() {
 }
 
 # DETECTAR ARQUITETURA DO .EXE 
+# Versão robusta: usa file quando disponível e faz leitura do cabeçalho PE (e_lfanew + Machine)
 detectar_arquitetura_exe() {
     local exe="$1"
-    local arch=""
 
-  
+    if [ ! -f "$exe" ]; then
+        return 1
+    fi
+
+    # Preferir 'file' se disponível
     if command -v file >/dev/null 2>&1; then
-        local file_info
-        file_info=$(file "$exe" 2>/dev/null)
-        
-        if echo "$file_info" | grep -qi "x86-64\|x86_64\|64-bit\|x64"; then
-            echo "win64"; return 0
-        elif echo "$file_info" | grep -qi "Intel 80386\|32-bit\|PE32 \|i386"; then
-            echo "win32"; return 0
+        local f
+        f=$(file -b "$exe" 2>/dev/null || true)
+        if echo "$f" | grep -qiE "(x86-64|x86_64|64-bit|PE32\+|PE32\+ executable)"; then
+            echo "win64"
+            return 0
+        elif echo "$f" | grep -qiE "(Intel 80386|80386|i386|32-bit|PE32 )"; then
+            echo "win32"
+            return 0
         fi
     fi
 
- 
-    if command -v od >/dev/null 2>&1; then
-        # Verifica assinatura PE em offset 0x3C
-        local pe_offset
-        pe_offset=$(od -An -tx4 -N64 "$exe" 2>/dev/null | head -1 | awk '{print $10}')
-        
-        if [ -n "$pe_offset" ]; then
-            # Lê machine type no offset PE+4
-            local machine_type
-            machine_type=$(od -An -tx2 -j $((0x${pe_offset:0:2}04 + 4)) -N2 "$exe" 2>/dev/null | tr -d ' ')
-            
-            case "$machine_type" in
-                8664) echo "win64"; return 0 ;;  # x86-64
-                014c) echo "win32"; return 0 ;;  # i386
-                aa64) echo "win64"; return 0 ;;  # ARM64
-            esac
+    # Fallback: ler e_lfanew no offset 0x3C (4 bytes little-endian) e depois Machine type em +4
+    if command -v dd >/dev/null 2>&1 && command -v od >/dev/null 2>&1; then
+        # lê 4 bytes em 0x3C
+        local e_lfanew_bytes
+        e_lfanew_bytes=$(dd if="$exe" bs=1 skip=60 count=4 2>/dev/null | od -An -t u1 | tr -s ' ' | sed 's/^ *//' | tr '\n' ' ' | sed 's/ $//' || true)
+        if [ -n "$e_lfanew_bytes" ]; then
+            # converte para número little-endian
+            local b1 b2 b3 b4
+            read -r b1 b2 b3 b4 <<<"$e_lfanew_bytes"
+            if [ -n "$b1" ] && [ -n "$b2" ]; then
+                local e_lfanew=$(( b1 + (b2<<8) + (b3<<16) + (b4<<24) ))
+                # lê 2 bytes do Machine (e_lfanew + 4)
+                local machine_bytes
+                machine_bytes=$(dd if="$exe" bs=1 skip=$((e_lfanew + 4)) count=2 2>/dev/null | od -An -t u1 | tr -s ' ' | sed 's/^ *//' | tr '\n' ' ' | sed 's/ $//' || true)
+                if [ -n "$machine_bytes" ]; then
+                    local m1 m2
+                    read -r m1 m2 <<<"$machine_bytes"
+                    # machine é little-endian: m1 + (m2<<8)
+                    local machine=$(( m1 + (m2<<8) ))
+                    case "$machine" in
+                        34404|0x8664|8664) echo "win64"; return 0 ;; # 0x8664 = 34404 decimal
+                        332|0x014c|332) echo "win32"; return 0 ;;    # 0x014c = 332 decimal
+                    esac
+                fi
+            fi
         fi
     fi
 
-    # Padrão seguro: win64
+    # Padrão seguro
     echo "win64"
 }
 
@@ -417,10 +442,8 @@ configurar_wow64() {
     fi
 
     info "Configurando WoW64 (64-bit + 32-bit)..."
-
-    
     WINE_BIN="$INSTALL_DIR/bin/wine64"
-    
+
     # Configura paths para 32-bit libs
     if [ -d "$INSTALL_DIR/lib32" ]; then
         export LD_LIBRARY_PATH="$INSTALL_DIR/lib32:$INSTALL_DIR/lib64:$INSTALL_DIR/lib:${LD_LIBRARY_PATH:-}"
@@ -430,6 +453,22 @@ configurar_wow64() {
 
     return 0
 }
+
+# Função que verifica se existe loader 32-bit no host
+checar_runtime_32bit() {
+    local ld_paths=(
+        "/lib/ld-linux.so.2"
+        "/lib32/ld-linux.so.2"
+        "/usr/lib32/ld-linux.so.2"
+        "/lib/i386-linux-gnu/ld-linux.so.2"
+        "/usr/lib/i386-linux-gnu/ld-linux.so.2"
+    )
+    for p in "${ld_paths[@]}"; do
+        [ -e "$p" ] && return 0
+    done
+    return 1
+}
+
 
 # INICIO
 exibir_logo
@@ -472,7 +511,6 @@ export WINEDLLOVERRIDES="winemenubuilder=d;rpcss=n;midimap=n"
 if [ "$WINE_TYPE" = "proton-ge" ]; then
     export PROTON_USE_WINED3D=0
 
-
     _has_futex2() {
         grep -qw "futex_waitv" /proc/kallsyms 2>/dev/null && return 0
         [ -e /dev/futex-waitv ] && return 0
@@ -492,7 +530,6 @@ if [ "$WINE_TYPE" = "proton-ge" ]; then
         aviso "Kernel sem futex_waitv — esync/fsync desativados (evita server-side sync)"
     fi
 else
-   
     _has_futex2() {
         grep -qw "futex_waitv" /proc/kallsyms 2>/dev/null && return 0
         [ -e /dev/futex-waitv ] && return 0
@@ -557,7 +594,7 @@ for search_path in "${SEARCH_PATHS[@]}"; do
     if [ -d "$search_path" ]; then
         while IFS= read -r exe_file; do
             EXES+=("$exe_file")
-        done < <(find "$search_path" -maxdepth 10 -type f -name "*.exe" 2>/dev/null)
+        done < <(find "$search_path" -maxdepth 10 -type f -iname "*.exe" 2>/dev/null || true)
     fi
 done
 
@@ -570,7 +607,7 @@ for exe in "${EXES[@]+"${EXES[@]}"}"; do
     fi
 done
 
-IFS=$'\n' UNIQUE_EXES=($(sort <<<"${UNIQUE_EXES[*]+"${UNIQUE_EXES[*]}"}"))
+IFS=$'\n' UNIQUE_EXES=( $(printf "%s\n" "${UNIQUE_EXES[@]}" | sort -u) )
 
 SELECTED=""
 if [ ${#UNIQUE_EXES[@]} -eq 0 ]; then
@@ -604,9 +641,31 @@ fi
 
 [ ! -f "$SELECTED" ] && erro "Arquivo não encontrado: '$SELECTED'"
 
-DETECTED_ARCH=$(detectar_arquitetura_exe "$SELECTED")
+DETECTED_ARCH=$(detectar_arquitetura_exe "$SELECTED" || true)
 info "Arquitetura do exe detectada: $DETECTED_ARCH"
 
+# Se exe for 32-bit, checar runtime no host
+if [ "$DETECTED_ARCH" = "win32" ]; then
+    if ! checar_runtime_32bit; then
+        echo ""
+        echo -e "${RED}Erro: runtime 32-bit ausente no sistema (ex: /lib/ld-linux.so.2).${RESET}"
+        echo ""
+        echo "Para corrigir, instale as bibliotecas 32-bit para sua distribuição. Exemplos:" 
+        echo ""
+        echo "  Debian/Ubuntu (multiarch):"
+        echo "    sudo dpkg --add-architecture i386 && sudo apt update"
+        echo "    sudo apt install libc6:i386 libgl1:i386 libx11-6:i386"
+        echo ""
+        echo "  Fedora:"
+        echo "    sudo dnf install glibc.i686 mesa-libGL.i686 libX11.i686"
+        echo ""
+        echo "  Arch Linux (habilite multilib):"
+        echo "    sudo pacman -S lib32-glibc lib32-mesa lib32-libx11"
+        echo ""
+        echo "Ou use/instale uma build do Wine/Wine-GE que inclua libs 32-bit em $INSTALL_DIR."
+        exit 1
+    fi
+fi
 
 # DETERMINAR ARQUITETURA FINAL DO PREFIX
 case "$WINE_ARCH_SUPPORT" in
@@ -640,7 +699,7 @@ _prefix_arch() {
 
     if [ -f "$reg" ]; then
         arch=$(grep -m1 '#arch=' "$reg" 2>/dev/null \
-               | sed 's/.*#arch=\([a-z0-9]*\).*/\1/' | tr -d '\r\n ')
+               | sed 's/.*#arch=\([a-z0-9]*\).*/\1/' | tr -d '\r\n ' || true)
     fi
 
     # Fallback presença de syswow64 indica prefix win64
