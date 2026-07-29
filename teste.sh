@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# teste.sh - Wine-GE installer + run helper (updated)
+# teste.sh - Wine-GE installer + run helper (UI ajustada)
 # - Apenas Wine-GE (Proton removido)
 # - Prefixes win64 (Wow64) por padrão — permite rodar 32-bit dentro de prefix 64-bit
-# - Opção para buscar e executar .exe diretamente; cria prefix automaticamente
+# - Após instalar: busca todos os .exe, ordena alfabeticamente e permite executar (todos ou apenas um)
 # - Sem sudo; local: ~/Área de Trabalho/Wine67 (ou ~/Desktop/Wine67)
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -93,9 +93,10 @@ install_dxvk_local() {
   return 1
 }
 
-for cmd in curl tar grep awk sed file find sort; do
+# checar comandos necessários (sem sugerir sudo)
+for cmd in curl tar grep awk sed file find sort mktemp; do
   if ! command -v "$cmd" >/dev/null 2>&1; then
-    log_err "Comando ausente: $cmd. Instale-o (ex: sudo apt install $cmd) e rode novamente. Este script NÃO usa sudo por si só."
+    log_err "Comando ausente: $cmd. Instale-o com o gerenciador de pacotes da sua distribuição e rode novamente."
     exit 1
   fi
 done
@@ -180,8 +181,8 @@ reinstall_all() {
   log_ok "Removido. Pronto para reinstalar."
 }
 
-# Scan common locations for .exe files and present a list to run
-scan_and_run_exe() {
+# Scan common locations for .exe files and return sorted unique list
+scan_exes_sorted() {
   declare -a SEARCH_PATHS=(
     "$BASE_DIR"
     "$HOME/Downloads"
@@ -192,40 +193,26 @@ scan_and_run_exe() {
     "$SCRIPT_DIR"
   )
 
-  local -a EXES=()
+  local tmp
+  tmp=$(mktemp)
   for sp in "${SEARCH_PATHS[@]}"; do
     [ -d "$sp" ] || continue
-    while IFS= read -r -d $'\0' f; do
-      EXES+=("$f")
-    done < <(find "$sp" -maxdepth 10 -type f -iname "*.exe" -print0 2>/dev/null)
+    find "$sp" -maxdepth 10 -type f -iname "*.exe" -print >> "$tmp" 2>/dev/null || true
   done
 
-  # dedupe
-  IFS=$'\n' read -r -d '' -a EXES < <(printf "%s\0" "${EXES[@]}" | awk '!seen[$0]++' ORS='\0') || true
-
-  if [ ${#EXES[@]} -eq 0 ]; then
-    echo "\nNenhum .exe encontrado automaticamente. Forneça o caminho completo para o .exe (ou Enter para cancelar):"
-    read -r USER_EXE
-    USER_EXE="${USER_EXE//\'/}"
-    [ -z "$USER_EXE" ] && { log_info "Cancelado."; return 0; }
-    [ -f "$USER_EXE" ] || { log_err "Arquivo não encontrado: $USER_EXE"; return 1; }
-    EXES=("$USER_EXE")
+  if [ ! -s "$tmp" ]; then
+    rm -f "$tmp"
+    return 1
   fi
 
-  echo "\nJogos encontrados:"
-  for i in "${!EXES[@]}"; do
-    printf "  [%d] %s\n" "$((i+1))" "${EXES[$i]}"
-  done
-  echo "\nEscolha o número (ou 0 para cancelar):"
-  read -r choice
-  if ! [[ "$choice" =~ ^[0-9]+$ ]]; then log_err "Opção inválida"; return 1; fi
-  if [ "$choice" -eq 0 ]; then log_info "Cancelado"; return 0; fi
-  if [ "$choice" -lt 1 ] || [ "$choice" -gt "${#EXES[@]}" ]; then log_err "Opção inválida"; return 1; fi
+  # sort case-insensitive and dedupe while preserving order
+  mapfile -t EXES < <(sort -f "$tmp" | awk '!seen[tolower($0)]++' )
+  rm -f "$tmp"
+  return 0
+}
 
-  local selected="${EXES[$((choice-1))]}"
-  log_info "Selecionado: $selected"
-
-  # detect architecture of exe (file)
+run_exe_with_prefix() {
+  local selected="$1"
   local arch="win64"
   if command -v file >/dev/null 2>&1; then
     local info
@@ -236,7 +223,6 @@ scan_and_run_exe() {
   fi
   log_info "Arquitetura detectada (exe): $arch -- usando prefix win64 (wow64)"
 
-  # create prefix name from basename
   local game_name
   game_name=$(basename "$selected" .exe | tr -cd '[:alnum:]_-')
   local prefix="$PREFIXES_DIR/$game_name"
@@ -247,7 +233,6 @@ scan_and_run_exe() {
     log_info "Usando prefix existente: $prefix"
   fi
 
-  # run the exe with wine64
   local winebin="$INSTALL_DIR/bin/wine64"
   if [ ! -x "$winebin" ]; then
     winebin=$(command -v wine64 || command -v wine || true)
@@ -260,34 +245,62 @@ scan_and_run_exe() {
   env WINEPREFIX="$prefix" PATH="$INSTALL_DIR/bin:$PATH" "$winebin" "$selected"
 }
 
-main_menu() {
-  cat <<EOF
+# After install: scan, present alphabetical list and let user run
+post_install_select_and_run() {
+  log_info "Procurando .exe em locais comuns..."
+  if ! scan_exes_sorted; then
+    log_warn "Nenhum .exe encontrado automaticamente."
+    echo -e "\nForneça o caminho completo para o .exe (ou Enter para cancelar):"
+    read -r USER_EXE
+    USER_EXE="${USER_EXE//\'//}"
+    [ -z "$USER_EXE" ] && { log_info "Cancelado."; return 0; }
+    [ -f "$USER_EXE" ] || { log_err "Arquivo não encontrado: $USER_EXE"; return 1; }
+    EXES=("$USER_EXE")
+  fi
 
-${BOLD}Wine67 Minimal (Wine-GE only) - sem sudo${RESET}
-Local: $BASE_DIR
+  echo
+  echo -e "${BOLD}Arquivos .exe encontrados (ordem alfabética):${RESET}"
+  for i in "${!EXES[@]}"; do
+    printf "  [%d] %s\n" "$((i+1))" "${EXES[$i]}"
+  done
 
-Escolha:
-  ${YELLOW}1${RESET} - Instalar Wine-GE (download + extrair)
-  ${YELLOW}2${RESET} - Reinstalar (limpar e instalar novamente)
-  ${YELLOW}3${RESET} - Buscar e executar .exe (cria prefix win64 automaticamente)
-  0 - Sair
+  echo
+  echo "Digite um número para executar apenas aquele .exe,"
+  echo "ou 'a' para executar TODOS em ordem alfabética,"
+  echo "ou Enter para cancelar:"
+  read -r choice
+  if [ -z "$choice" ]; then log_info "Cancelado."; return 0; fi
 
-EOF
-  read -rp "Escolha: " opt
-  case "$opt" in
-    1) install_flow ;; 
-    2) reinstall_flow ;; 
-    3) scan_and_run_exe ;; 
-    0) log_info "Saindo."; exit 0 ;;
-    *) log_err "Opção inválida."; main_menu ;;
-  esac
+  if [[ "$choice" =~ ^[aA]$ ]]; then
+    for exe in "${EXES[@]}"; do
+      log_info ">>> Executando: $exe"
+      run_exe_with_prefix "$exe" || log_warn "Falha ao executar: $exe"
+      echo
+    done
+    return 0
+  fi
+
+  if ! [[ "$choice" =~ ^[0-9]+$ ]]; then log_err "Opção inválida"; return 1; fi
+  if [ "$choice" -lt 1 ] || [ "$choice" -gt "${#EXES[@]}" ]; then log_err "Opção inválida"; return 1; fi
+  local selected="${EXES[$((choice-1))]}"
+  log_info "Selecionado: $selected"
+  run_exe_with_prefix "$selected"
 }
 
 install_flow() {
   if valid_install; then
-    log_warn "Parece já haver uma instalação em $INSTALL_DIR. Use opção 2 para reinstalar ou remova manualmente."
-    return 0
+    log_warn "Parece já haver uma instalação em $INSTALL_DIR."
+    echo "Deseja usar a instalação existente e procurar/rodar .exe? [S/n]"
+    read -r use_existing; use_existing=${use_existing:-s}
+    if [[ "$use_existing" =~ ^[sSyY] ]]; then
+      post_install_select_and_run
+      return 0
+    else
+      log_info "Continuando para reinstalar..."
+      reinstall_all
+    fi
   fi
+
   local url
   url=$(get_ge_url) || true
   if [ -z "$url" ]; then log_err "Não consegui detectar URL do Wine-GE"; return 1; fi
@@ -296,13 +309,15 @@ install_flow() {
   extract_ge "$dest"
   rm -f "$dest"
 
-  echo "\nDeseja baixar DXVK e tentar instalá-lo localmente? (recomendado para jogos DirectX) [S/n]"
+  echo
+  echo "Deseja baixar DXVK e tentar instalá-lo localmente? (recomendado para jogos DirectX) [S/n]"
   read -r dxopt; dxopt=${dxopt:-s}
   if [[ "$dxopt" =~ ^[sSyY] ]]; then
     install_dxvk_local || log_warn "DXVK não instalado automaticamente. Você pode colocar o tar.gz em $DXVK_DIR e recriar o prefix."
   fi
 
   log_ok "Instalação concluída. Binários: $INSTALL_DIR/bin"
+  post_install_select_and_run
 }
 
 reinstall_flow() {
@@ -315,7 +330,38 @@ reinstall_flow() {
   install_flow
 }
 
+draw_header() {
+  clear
+  local title="Wine67 Minimal (Wine-GE only) - sem sudo"
+  local location="Local: $BASE_DIR"
+  printf "%s\n" "=============================================="
+  printf "%s\n" "  ${BOLD}${title}${RESET}"
+  printf "%s\n" "  ${CYAN}${location}${RESET}"
+  printf "%s\n" "=============================================="
+}
+
+main_menu() {
+  draw_header
+  cat <<EOF
+
+Escolha:
+  ${YELLOW}1${RESET} - Instalar / Executar (.exe encontrados serão listados em ordem alfabética)
+  ${YELLOW}2${RESET} - Reinstalar (limpar e instalar novamente)
+
+EOF
+  read -rp "Escolha (use Ctrl+C para sair): " opt
+  case "$opt" in
+    1) install_flow ;;
+    2) reinstall_flow ;;
+    *) log_err "Opção inválida."; sleep 1; main_menu ;;
+  esac
+}
+
 # start
-main_menu
+while true; do
+  main_menu
+  echo
+  read -rp "Pressione Enter para voltar ao menu principal..." _ || true
+done
 
 exit 0
