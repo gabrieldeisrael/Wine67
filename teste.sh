@@ -20,7 +20,7 @@ PREFIXES_DIR="$BASE_DIR/prefixes"
 mkdir -p "$INSTALL_DIR" "$DXVK_DIR" "$PREFIXES_DIR"
 
 # Colors
-RED='\033[0;31m' GREEN='\033[0;32m' YELLOW='\033[1;33m' CYAN='\033[0;36m' BG_GREEN='\033[42m' BG_BLUE='\033[44m' BLACK='\033[0;30m'
+RED='\033[0;31m' GREEN='\033[0;32m' YELLOW='\033[1;33m' CYAN='\033[0;36m' BG_GREEN='\033[42m' BG_YELLOW='\033[43m' BLACK='\033[0;30m'
 BOLD='\033[1m' RESET='\033[0m'
 
 log_err()  { echo -e "${RED}✖ $*${RESET}"  >&2; }
@@ -122,6 +122,26 @@ extract_ge() {
     mv "$INSTALL_DIR/tmp_extract"/* "$INSTALL_DIR"/ 2>/dev/null || true
   fi
   rm -rf "$INSTALL_DIR/tmp_extract"
+}
+
+# Install wine locally (no sudo) by creating user-level wrappers/symlinks in ~/.local/bin
+setup_local_wine() {
+  if [ -d "$INSTALL_DIR/bin" ] && ( [ -x "$INSTALL_DIR/bin/wine" ] || [ -x "$INSTALL_DIR/bin/wine64" ] ); then
+    mkdir -p "$HOME/.local/bin"
+    for b in wine wine64 wineboot winecfg; do
+      if [ -x "$INSTALL_DIR/bin/$b" ]; then
+        ln -sf "$INSTALL_DIR/bin/$b" "$HOME/.local/bin/$b"
+        chmod +x "$INSTALL_DIR/bin/$b" || true
+      fi
+    done
+    export PATH="$HOME/.local/bin:$PATH"
+    log_ok "Wine (local) instalado em $HOME/.local/bin e PATH atualizado para esta sessão."
+    log_warn "Para tornar permanente, adicione: export PATH=\"$HOME/.local/bin:\$PATH\" ao seu ~/.profile ou rc de shell."
+    return 0
+  else
+    log_warn "Binários do Wine não encontrados em $INSTALL_DIR/bin; verifique instalação."
+    return 1
+  fi
 }
 
 valid_install() {
@@ -259,13 +279,14 @@ post_install_select_and_run() {
   fi
 
   echo
-  echo -e "${BOLD}Arquivos .exe encontrados (ordem alfabética — TODOS os resultados):${RESET}"
+  echo -e "${BOLD}Arquivos .exe encontrados (ordem alfabética �� TODOS os resultados):${RESET}"
   printf "  %s\n" "${CYAN}Total: ${#EXES[@]}${RESET}"
   echo
   for i in "${!EXES[@]}"; do
     idx=$((i+1))
-    # prettier button-like label
-    printf "  %b %b %s %b\n" "${BG_BLUE}${BLACK}" " ${idx} " "${RESET}${BOLD}${EXES[$i]}${RESET}" ""
+    fname=$(basename "${EXES[$i]}")
+    # prettier button-like label (show only filename, yellow background)
+    printf "  %b %b %s %b\n" "${BG_YELLOW}${BLACK}" " ${idx} " "${RESET}${BOLD}${fname}${RESET}" ""
   done
 
   echo
@@ -277,8 +298,9 @@ post_install_select_and_run() {
 
   if [[ "$choice" =~ ^[aA]$ ]]; then
     for exe in "${EXES[@]}"; do
-      log_info ">>> Executando: $exe"
-      run_exe_with_prefix "$exe" || log_warn "Falha ao executar: $exe"
+      fname=$(basename "$exe")
+      log_info ">>> Executando: $fname"
+      run_exe_with_prefix "$exe" || log_warn "Falha ao executar: $fname"
       echo
     done
     return 0
@@ -287,7 +309,8 @@ post_install_select_and_run() {
   if ! [[ "$choice" =~ ^[0-9]+$ ]]; then log_err "Opção inválida"; return 1; fi
   if [ "$choice" -lt 1 ] || [ "$choice" -gt "${#EXES[@]}" ]; then log_err "Opção inválida"; return 1; fi
   local selected="${EXES[$((choice-1))]}"
-  log_info "Selecionado: $selected"
+  selname=$(basename "$selected")
+  log_info "Selecionado: $selname"
   run_exe_with_prefix "$selected"
 }
 
@@ -312,6 +335,13 @@ install_flow() {
   download "$url" "$dest" "wine-ge" || return 1
   extract_ge "$dest"
   rm -f "$dest"
+
+  # try to make wine available for the user without sudo
+  if setup_local_wine; then
+    log_ok "Wine local configurado."
+  else
+    log_warn "Wine local não configurado automaticamente. Você pode rodar o script novamente após extrair o binário em $INSTALL_DIR/bin."
+  fi
 
   echo
   echo "Deseja baixar DXVK e tentar instalá-lo localmente? (recomendado para jogos DirectX) [S/n]"
