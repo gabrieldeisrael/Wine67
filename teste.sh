@@ -144,6 +144,36 @@ setup_local_wine() {
   fi
 }
 
+# Check for 32-bit loader (ld-linux.so.2) and inform user with distro commands if missing
+check_32bit_loader() {
+  if [ -f /lib/ld-linux.so.2 ] || [ -f /lib32/ld-linux.so.2 ] || [ -f /lib64/ld-linux-x86-64.so.2 ]; then
+    return 0
+  fi
+
+  log_warn "/lib/ld-linux.so.2 não encontrado — executáveis 32-bit podem falhar (ld-linux loader ausente)."
+  cat <<'INSTR'
+Instalação (requer sudo) — exemplos por distribuição:
+
+Debian / Ubuntu / Mint:
+  sudo dpkg --add-architecture i386
+  sudo apt update
+  sudo apt install libc6:i386 wine32 -y
+
+Fedora:
+  sudo dnf install glibc.i686 wine -y
+
+Arch Linux (habilitar multilib em /etc/pacman.conf):
+  sudo pacman -Syu
+  sudo pacman -S lib32-glibc wine
+
+openSUSE:
+  sudo zypper install glibc-32bit wine
+
+Observação: instalar wine32 (ou pacotes i386/glibc) geralmente resolve '/lib/ld-linux.so.2: could not open' e ShellExecuteEx falhou.
+INSTR
+  return 1
+}
+
 valid_install() {
   if [ -x "$INSTALL_DIR/bin/wine64" ] || [ -x "$INSTALL_DIR/bin/wine" ]; then
     return 0
@@ -336,8 +366,8 @@ post_install_select_and_run() {
   for i in "${!EXES[@]}"; do
     idx=$((i+1))
     fname=$(basename "${EXES[$i]}")
-    # full yellow block: index + filename
-    printf "  %b %s %b %s %b\n" "${BG_YELLOW}${BLACK}" " ${idx} " "${RESET}${BG_YELLOW}${BLACK}" " ${fname} " "${RESET}"
+    # index and filename in yellow (foreground)
+    printf "  %b[%d]%b %b%s%b\n" "${YELLOW}" "$idx" "${RESET}" "${YELLOW}${BOLD}" "$fname" "${RESET}"
   done
 
   echo
@@ -384,6 +414,9 @@ quick_install_flow() {
 }
 
 install_flow() {
+  # check 32-bit loader early and inform the user (does not block install)
+  check_32bit_loader || true
+
   if valid_install; then
     log_warn "Parece já haver uma instalação em $INSTALL_DIR."
     echo "Deseja usar a instalação existente e procurar/rodar .exe? [S/n]"
