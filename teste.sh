@@ -3,7 +3,7 @@ set -euo pipefail
 
 # teste.sh - Wine-GE installer + run helper (UI ajustada)
 # - Apenas Wine-GE (Proton removido)
-# - Prefixes win64 (Wow64) por padrão — permite rodar 32-bit dentro de prefix 64-bit
+# - Prefixes win64/win32 por padrão conforme detectado
 # - Após instalar: busca todos os .exe, ordena alfabeticamente e permite executar (todos ou apenas um)
 # - Sem sudo; local: ~/Área de Trabalho/Wine67 (ou ~/Desktop/Wine67)
 
@@ -20,7 +20,7 @@ PREFIXES_DIR="$BASE_DIR/prefixes"
 mkdir -p "$INSTALL_DIR" "$DXVK_DIR" "$PREFIXES_DIR"
 
 # Colors
-RED='\033[0;31m' GREEN='\033[0;32m' YELLOW='\033[1;33m' CYAN='\033[0;36m' BG_GREEN='\033[42m' BG_YELLOW='\033[43m' BLACK='\033[0;30m'
+RED='\033[0;31m' GREEN='\033[0;32m' YELLOW='\033[1;33m' CYAN='\033[0;36m' BG_YELLOW='\033[43m' BLACK='\033[0;30m'
 BOLD='\033[1m' RESET='\033[0m'
 
 log_err()  { echo -e "${RED}✖ $*${RESET}"  >&2; }
@@ -151,7 +151,7 @@ valid_install() {
   return 1
 }
 
-# Create win64 prefix (wow64 capable). We ALWAYS create win64 prefixes so 32-bit .exe run under wow64.
+# Create win64 prefix (wow64 capable)
 create_win64_prefix() {
   local name="$1"
   local p="$PREFIXES_DIR/$name"
@@ -163,7 +163,6 @@ create_win64_prefix() {
 
   local wine64bin="$INSTALL_DIR/bin/wine64"
   if [ ! -x "$wine64bin" ]; then
-    # fallback to wine in PATH
     wine64bin=$(command -v wine64 || true)
   fi
   if [ -z "$wine64bin" ]; then
@@ -177,7 +176,6 @@ create_win64_prefix() {
   spinner $pid "Inicializando prefix win64"
   wait $pid || true
 
-  # verify
   if [ -f "$p/system.reg" ]; then
     log_ok "Prefix win64 criado: $p"
   else
@@ -194,9 +192,41 @@ create_win64_prefix() {
   fi
 }
 
+# Create win32 prefix
+create_win32_prefix() {
+  local name="$1"
+  local p="$PREFIXES_DIR/$name"
+  if [ -d "$p" ] && [ -f "$p/system.reg" ]; then
+    log_warn "Prefix já existe: $p"
+    return 0
+  fi
+  mkdir -p "$p"
+
+  local winebin="$INSTALL_DIR/bin/wine"
+  if [ ! -x "$winebin" ]; then
+    winebin=$(command -v wine || true)
+  fi
+  if [ -z "$winebin" ]; then
+    log_err "wine (32-bit) não encontrado. Verifique instalação em $INSTALL_DIR/bin"
+    return 1
+  fi
+
+  log_info "Criando prefix win32 em: $p"
+  env -i HOME="$HOME" PATH="$INSTALL_DIR/bin:$PATH" DISPLAY="${DISPLAY:-:0}" WINEPREFIX="$p" WINEARCH=win32 "$winebin" wineboot -i >/dev/null 2>&1 &
+  pid=$!
+  spinner $pid "Inicializando prefix win32"
+  wait $pid || true
+
+  if [ -f "$p/system.reg" ]; then
+    log_ok "Prefix win32 criado: $p"
+  else
+    log_warn "Prefix criado, mas system.reg ausente; confira: $p"
+  fi
+}
+
 reinstall_all() {
-  log_warn "Removendo instalação em $INSTALL_DIR e prefixes em $PREFIXES_DIR"
-  rm -rf "$INSTALL_DIR" "$PREFIXES_DIR" "$DXVK_DIR"
+  log_warn "Removendo instalação em $BASE_DIR e prefixes"
+  rm -rf "$BASE_DIR"
   mkdir -p "$INSTALL_DIR" "$PREFIXES_DIR" "$DXVK_DIR"
   log_ok "Removido. Pronto para reinstalar."
 }
@@ -241,19 +271,33 @@ run_exe_with_prefix() {
       arch="win32"
     fi
   fi
-  log_info "Arquitetura detectada (exe): $arch -- usando prefix win64 (wow64)"
+  log_info "Arquitetura detectada (exe): $arch"
 
   local game_name
   game_name=$(basename "$selected" .exe | tr -cd '[:alnum:]_-')
   local prefix="$PREFIXES_DIR/$game_name"
 
-  if [ ! -f "$prefix/system.reg" ]; then
-    create_win64_prefix "$game_name" || { log_err "Falha ao criar prefix"; return 1; }
+  if [ "$arch" = "win32" ]; then
+    if [ ! -f "$prefix/system.reg" ]; then
+      create_win32_prefix "$game_name" || { log_err "Falha ao criar prefix win32"; return 1; }
+    else
+      log_info "Usando prefix win32 existente: $prefix"
+    fi
   else
-    log_info "Usando prefix existente: $prefix"
+    if [ ! -f "$prefix/system.reg" ]; then
+      create_win64_prefix "$game_name" || { log_err "Falha ao criar prefix win64"; return 1; }
+    else
+      log_info "Usando prefix win64 existente: $prefix"
+    fi
   fi
 
-  local winebin="$INSTALL_DIR/bin/wine64"
+  # prefer local wine binaries if available
+  local winebin
+  if [ "$arch" = "win32" ]; then
+    winebin="$INSTALL_DIR/bin/wine"
+  else
+    winebin="$INSTALL_DIR/bin/wine64"
+  fi
   if [ ! -x "$winebin" ]; then
     winebin=$(command -v wine64 || command -v wine || true)
   fi
@@ -261,7 +305,14 @@ run_exe_with_prefix() {
     log_err "wine não encontrou binários. Verifique instalação."; return 1
   fi
 
-  log_info "Executando: WINEPREFIX=$prefix $winebin $selected"
+  local exe_dir
+  exe_dir=$(dirname "$selected")
+  local exe_base
+  exe_base=$(basename "$selected")
+
+  # Try running with start /unix from the exe directory (avoids ShellExecuteEx errors)
+  ( cd "$exe_dir" && env WINEPREFIX="$prefix" PATH="$INSTALL_DIR/bin:$PATH" "$winebin" start /unix "./$exe_base" ) || \
+  # Fallback: run absolute path
   env WINEPREFIX="$prefix" PATH="$INSTALL_DIR/bin:$PATH" "$winebin" "$selected"
 }
 
@@ -279,14 +330,14 @@ post_install_select_and_run() {
   fi
 
   echo
-  echo -e "${BOLD}Arquivos .exe encontrados (ordem alfabética �� TODOS os resultados):${RESET}"
+  echo -e "${BOLD}Arquivos .exe encontrados (ordem alfabética — TODOS os resultados):${RESET}"
   printf "  %s\n" "${CYAN}Total: ${#EXES[@]}${RESET}"
   echo
   for i in "${!EXES[@]}"; do
     idx=$((i+1))
     fname=$(basename "${EXES[$i]}")
-    # prettier button-like label (show only filename, yellow background)
-    printf "  %b %b %s %b\n" "${BG_YELLOW}${BLACK}" " ${idx} " "${RESET}${BOLD}${fname}${RESET}" ""
+    # full yellow block: index + filename
+    printf "  %b %s %b %s %b\n" "${BG_YELLOW}${BLACK}" " ${idx} " "${RESET}${BG_YELLOW}${BLACK}" " ${fname} " "${RESET}"
   done
 
   echo
@@ -312,6 +363,24 @@ post_install_select_and_run() {
   selname=$(basename "$selected")
   log_info "Selecionado: $selname"
   run_exe_with_prefix "$selected"
+}
+
+# Quick install: remove everything and run normal install non-interactive where possible
+quick_install_flow() {
+  log_warn "Execução de instalação rápida: removendo pasta inteira e reinstalando"
+  reinstall_all
+  local url
+  url=$(get_ge_url) || true
+  if [ -z "$url" ]; then log_err "Não consegui detectar URL do Wine-GE"; return 1; fi
+  local dest="$BASE_DIR/$(basename "$url")"
+  download "$url" "$dest" "wine-ge" || return 1
+  extract_ge "$dest"
+  rm -f "$dest"
+
+  setup_local_wine || log_warn "Falha ao configurar wine local automaticamente"
+  install_dxvk_local || log_warn "Falha ao instalar DXVK automaticamente"
+  log_ok "Instalação rápida concluída. Binários: $INSTALL_DIR/bin"
+  post_install_select_and_run
 }
 
 install_flow() {
@@ -355,7 +424,7 @@ install_flow() {
 }
 
 reinstall_flow() {
-  read -rp "Confirma remoção completa de $INSTALL_DIR e prefixes? (s/N): " yn
+  read -rp "Confirma remoção completa de $BASE_DIR e prefixes? (s/N): " yn
   case "$yn" in
     s|S|y|Y|sim|SIM) ;;
     *) log_info "Reinstalação cancelada."; return 0 ;;
@@ -379,12 +448,14 @@ main_menu() {
   echo
   echo -e "Escolha:"
   printf "  %b %b - %b\n" "${GREEN}●${RESET}" "${YELLOW}[1]${RESET}" "${BOLD}Instalar / Executar${RESET}"
-  printf "  %b %b - %b\n" "${GREEN}●${RESET}" "${YELLOW}[2]${RESET}" "${BOLD}Reinstalar (limpar e instalar novamente)${RESET}"
+  printf "  %b %b - %b\n" "${GREEN}●${RESET}" "${YELLOW}[2]${RESET}" "${BOLD}Reinstalar (recriar pasta inteira)${RESET}"
+  printf "  %b %b - %b\n" "${GREEN}●${RESET}" "${YELLOW}[3]${RESET}" "${BOLD}Instalação rápida (recria pasta inteira e tenta configurar)${RESET}"
   echo
   read -rp "Escolha (use Ctrl+C para sair): " opt
   case "$opt" in
     1) install_flow ;;
     2) reinstall_flow ;;
+    3) quick_install_flow ;;
     *) log_err "Opção inválida."; sleep 1; main_menu ;;
   esac
 }
