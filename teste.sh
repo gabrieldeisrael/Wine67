@@ -20,7 +20,7 @@ PREFIXES_DIR="$BASE_DIR/prefixes"
 mkdir -p "$INSTALL_DIR" "$DXVK_DIR" "$PREFIXES_DIR"
 
 # Colors
-RED='\033[0;31m' GREEN='\033[0;32m' YELLOW='\033[1;33m' CYAN='\033[0;36m'
+RED='\033[0;31m' GREEN='\033[0;32m' YELLOW='\033[1;33m' CYAN='\033[0;36m' BG_GREEN='\033[42m' BG_BLUE='\033[44m' BLACK='\033[0;30m'
 BOLD='\033[1m' RESET='\033[0m'
 
 log_err()  { echo -e "${RED}✖ $*${RESET}"  >&2; }
@@ -181,8 +181,8 @@ reinstall_all() {
   log_ok "Removido. Pronto para reinstalar."
 }
 
-# Scan common locations for .exe files and return sorted unique list
-scan_exes_sorted() {
+# Scan common locations for .exe files and return sorted list (DO NOT dedupe — show all)
+scan_exes() {
   declare -a SEARCH_PATHS=(
     "$BASE_DIR"
     "$HOME/Downloads"
@@ -205,8 +205,8 @@ scan_exes_sorted() {
     return 1
   fi
 
-  # sort case-insensitive and dedupe while preserving order
-  mapfile -t EXES < <(sort -f "$tmp" | awk '!seen[tolower($0)]++' )
+  # sort case-insensitive but keep duplicates (list ALL found)
+  mapfile -t EXES < <(sort -f "$tmp")
   rm -f "$tmp"
   return 0
 }
@@ -248,7 +248,7 @@ run_exe_with_prefix() {
 # After install: scan, present alphabetical list and let user run
 post_install_select_and_run() {
   log_info "Procurando .exe em locais comuns..."
-  if ! scan_exes_sorted; then
+  if ! scan_exes; then
     log_warn "Nenhum .exe encontrado automaticamente."
     echo -e "\nForneça o caminho completo para o .exe (ou Enter para cancelar):"
     read -r USER_EXE
@@ -259,9 +259,13 @@ post_install_select_and_run() {
   fi
 
   echo
-  echo -e "${BOLD}Arquivos .exe encontrados (ordem alfabética):${RESET}"
+  echo -e "${BOLD}Arquivos .exe encontrados (ordem alfabética — TODOS os resultados):${RESET}"
+  printf "  %s\n" "${CYAN}Total: ${#EXES[@]}${RESET}"
+  echo
   for i in "${!EXES[@]}"; do
-    printf "  [%d] %s\n" "$((i+1))" "${EXES[$i]}"
+    idx=$((i+1))
+    # prettier button-like label
+    printf "  %b %b %s %b\n" "${BG_BLUE}${BLACK}" " ${idx} " "${RESET}${BOLD}${EXES[$i]}${RESET}" ""
   done
 
   echo
@@ -342,13 +346,11 @@ draw_header() {
 
 main_menu() {
   draw_header
-  cat <<EOF
-
-Escolha:
-  ${YELLOW}1${RESET} - Instalar / Executar (.exe encontrados serão listados em ordem alfabética)
-  ${YELLOW}2${RESET} - Reinstalar (limpar e instalar novamente)
-
-EOF
+  echo
+  echo -e "Escolha:"
+  printf "  %b %b - %b\n" "${GREEN}●${RESET}" "${YELLOW}[1]${RESET}" "${BOLD}Instalar / Executar${RESET}"
+  printf "  %b %b - %b\n" "${GREEN}●${RESET}" "${YELLOW}[2]${RESET}" "${BOLD}Reinstalar (limpar e instalar novamente)${RESET}"
+  echo
   read -rp "Escolha (use Ctrl+C para sair): " opt
   case "$opt" in
     1) install_flow ;;
