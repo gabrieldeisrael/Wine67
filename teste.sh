@@ -394,7 +394,7 @@ post_install_select_and_run() {
     log_warn "Nenhum .exe encontrado automaticamente."
     echo -e "\nForneça o caminho completo para o .exe (ou Enter para cancelar):"
     read -r USER_EXE
-    USER_EXE="${USER_EXE//\\'//}"
+    USER_EXE=$(printf '%s' "$USER_EXE" | tr -d "\\'")
     [ -z "$USER_EXE" ] && { log_info "Cancelado."; return 0; }
     [ -f "$USER_EXE" ] || { log_err "Arquivo não encontrado: $USER_EXE"; return 1; }
     EXES=("$USER_EXE")
