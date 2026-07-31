@@ -78,10 +78,109 @@ install_dxvk_local() {
   return 1
 }
 
-for cmd in curl tar grep awk sed file find sort mktemp winetricks; do
+# Instala Wine via repositório WineHQ focado em Ubuntu 20.04 (Linux Mint 20.x)
+install_system_wine() {
+  log_info "Tentando instalar Wine (WineHQ) pelo gerenciador do sistema (focal/Mint 20)..."
+  if command -v wine >/dev/null 2>&1 || command -v wine64 >/dev/null 2>&1; then
+    log_ok "Wine já disponível: $(wine --version 2>/dev/null || wine64 --version 2>/dev/null || true)"
+    return 0
+  fi
+
+  if ! command -v apt-get >/dev/null 2>&1; then
+    log_err "apt-get não encontrado — este instalador automatizado suporta distribuições baseadas em Debian/Ubuntu (Mint)."
+    return 1
+  fi
+
+  # detecta codename Ubuntu (focal para Mint 20)
+  local ubuntu_codename=""
+  ubuntu_codename=$(lsb_release -cs 2>/dev/null || true)
+  if [ -f /etc/os-release ]; then
+    . /etc/os-release || true
+    ubuntu_codename=${UBUNTU_CODENAME:-$ubuntu_codename}
+  fi
+  # Forçar focal se detectarmos Mint 20 base e não tivermos UBUNTU_CODENAME
+  case "$ubuntu_codename" in
+    ulyana|uma|ulyssa|uma*) ubuntu_codename="focal" ;; # fallback common Mint codenames -> focal
+  esac
+  ubuntu_codename=${ubuntu_codename:-focal}
+
+  log_info "Usando codename Ubuntu: $ubuntu_codename"
+
+  # pedir consentimento para usar sudo (se não for root)
+  local need_sudo=0
+  if [ "$(id -u)" -ne 0 ]; then
+    if command -v sudo >/dev/null 2>&1; then
+      read -rp "A instalação precisa executar comandos como root (sudo). Continuar? [S/n]: " yn
+      yn=${yn:-s}
+      case "$yn" in s|S|y|Y) need_sudo=1 ;; *) log_info "Instalação cancelada pelo usuário."; return 1 ;; esac
+    else
+      log_err "Não há sudo e você não é root. Impossível instalar automaticamente."
+      return 1
+    fi
+  fi
+
+  # Instala pré-requisitos
+  if [ "$need_sudo" -eq 1 ]; then
+    sudo apt-get update -y
+    sudo apt-get install -y --no-install-recommends wget ca-certificates gnupg2 software-properties-common apt-transport-https || true
+    sudo dpkg --add-architecture i386 || true
+    # adicionar chave e repositório WineHQ
+    log_info "Adicionando chave do WineHQ..."
+    if ! wget -qO- https://dl.winehq.org/wine-builds/winehq.key | sudo apt-key add - >/dev/null 2>&1; then
+      log_warn "Falha ao adicionar chave via apt-key; tentando via gpg/arquivo..."
+      sudo mkdir -p /etc/apt/keyrings || true
+      wget -qO /tmp/winehq.key https://dl.winehq.org/wine-builds/winehq.key || true
+      if [ -f /tmp/winehq.key ]; then
+        sudo apt-key add /tmp/winehq.key >/dev/null 2>&1 || true
+      fi
+      rm -f /tmp/winehq.key
+    fi
+
+    if ! grep -R "dl.winehq.org/wine-builds" /etc/apt/sources.list /etc/apt/sources.list.d 2>/dev/null | grep -q .; then
+      log_info "Adicionando repositório WineHQ para ${ubuntu_codename}..."
+      sudo add-apt-repository -y "deb https://dl.winehq.org/wine-builds/ubuntu/ ${ubuntu_codename} main" || true
+    else
+      log_info "Repositório WineHQ já presente."
+    fi
+
+    sudo apt-get update -y
+    log_info "Instalando winehq-stable..."
+    if sudo apt-get install -y --install-recommends winehq-stable; then
+      log_ok "winehq-stable instalado com sucesso."
+    else
+      log_warn "Falha ao instalar winehq-stable. Tentando winehq-devel e wine-stable..."
+      sudo apt-get install -y --install-recommends winehq-devel || sudo apt-get install -y wine-stable || true
+    fi
+  else
+    # já é root
+    apt-get update -y
+    apt-get install -y --no-install-recommends wget ca-certificates gnupg2 software-properties-common apt-transport-https || true
+    dpkg --add-architecture i386 || true
+    wget -qO- https://dl.winehq.org/wine-builds/winehq.key | apt-key add - >/dev/null 2>&1 || true
+    if ! grep -R "dl.winehq.org/wine-builds" /etc/apt/sources.list /etc/apt/sources.list.d 2>/dev/null | grep -q .; then
+      add-apt-repository -y "deb https://dl.winehq.org/wine-builds/ubuntu/ ${ubuntu_codename} main" || true
+    fi
+    apt-get update -y
+    apt-get install -y --install-recommends winehq-stable || (apt-get install -y --install-recommends winehq-devel || apt-get install -y wine-stable || true)
+  fi
+
+  # Verifica se ficou disponível
+  if command -v wine >/dev/null 2>&1 || command -v wine64 >/dev/null 2>&1; then
+    log_ok "Wine disponível: $(wine --version 2>/dev/null || wine64 --version 2>/dev/null || true)"
+    return 0
+  fi
+
+  log_err "Não consegui instalar o Wine automaticamente via WineHQ. Instale manualmente conforme https://wiki.winehq.org/Ubuntu"
+  return 1
+}
+
+for cmd in curl tar grep awk sed file find sort mktemp winetricks wget lsb_release; do
   if ! command -v "$cmd" >/dev/null 2>&1; then
     if [ "$cmd" = "winetricks" ]; then
       log_warn "winetricks não encontrado — algumas correções automáticas (runtimes) não funcionarão. Recomendo instalar winetricks."
+    elif [ "$cmd" = "lsb_release" ]; then
+      # lsb_release é opcional, mas recomendado
+      log_warn "lsb_release não encontrado — suposições de codename serão feitas."
     else
       log_err "Comando ausente: $cmd. Instale-o com o gerenciador de pacotes e rode novamente."
       exit 1
@@ -295,7 +394,7 @@ post_install_select_and_run() {
     log_warn "Nenhum .exe encontrado automaticamente."
     echo -e "\nForneça o caminho completo para o .exe (ou Enter para cancelar):"
     read -r USER_EXE
-    USER_EXE="${USER_EXE//\'//}"
+    USER_EXE="${USER_EXE//\\'//}"
     [ -z "$USER_EXE" ] && { log_info "Cancelado."; return 0; }
     [ -f "$USER_EXE" ] || { log_err "Arquivo não encontrado: $USER_EXE"; return 1; }
     EXES=("$USER_EXE")
@@ -330,14 +429,28 @@ quick_install_flow() {
   local url; url=$(get_ge_url) || true
   [ -z "$url" ] && { log_err "Não consegui detectar URL do Wine-GE"; return 1; }
   local dest="$BASE_DIR/$(basename "$url")"
-  download "$url" "$dest" "wine-ge" || return 1
-  extract_ge "$dest"
-  rm -f "$dest"
-  setup_local_wine || log_warn "Falha ao configurar wine local automaticamente"
-  install_dxvk_local || log_warn "Falha ao instalar DXVK automaticamente"
-  install_wow64_quick || log_warn "Falha instalar wow64 rápido"
-  log_ok "Instalação rápida concluída."
-  post_install_select_and_run
+
+  if download "$url" "$dest" "wine-ge"; then
+    extract_ge "$dest"
+    rm -f "$dest"
+    setup_local_wine || log_warn "Falha ao configurar wine local automaticamente"
+    install_dxvk_local || log_warn "Falha ao instalar DXVK automaticamente"
+    install_wow64_quick || log_warn "Falha instalar wow64 rápido"
+    log_ok "Instalação rápida concluída."
+    post_install_select_and_run
+    return 0
+  fi
+
+  # fallback: instalar wine pelo WineHQ (Ubuntu focal / Mint 20)
+  log_warn "Download do Wine-GE falhou. Tentando instalar Wine pelo repositório WineHQ (focal)..."
+  if install_system_wine; then
+    log_ok "Wine do sistema instalado. Prosseguindo sem Wine-GE."
+    post_install_select_and_run
+    return 0
+  else
+    log_err "Não foi possível obter Wine-GE nem instalar Wine do sistema."
+    return 1
+  fi
 }
 
 install_flow() {
@@ -353,17 +466,28 @@ install_flow() {
   local url; url=$(get_ge_url) || true
   [ -z "$url" ] && { log_err "Não consegui detectar URL do Wine-GE"; return 1; }
   local dest="$BASE_DIR/$(basename "$url")"
-  download "$url" "$dest" "wine-ge" || return 1
-  extract_ge "$dest"
-  rm -f "$dest"
-  setup_local_wine || log_warn "Wine local não configurado automaticamente"
+
+  if download "$url" "$dest" "wine-ge"; then
+    extract_ge "$dest"
+    rm -f "$dest"
+    setup_local_wine || log_warn "Wine local não configurado automaticamente"
+  else
+    log_warn "Falha ao baixar Wine-GE; tentando instalar Wine do sistema (WineHQ)..."
+    if install_system_wine; then
+      log_ok "Wine do sistema instalado. Prosseguindo sem Wine-GE."
+    else
+      log_err "Não foi possível obter Wine-GE nem instalar Wine do sistema."
+      return 1
+    fi
+  fi
+
   echo
   echo "Deseja baixar DXVK e tentar instalá-lo localmente? [S/n]"
   read -r dxopt; dxopt=${dxopt:-s}
-  if [[ "$dxopt" =~ ^[sSyY] ]]; then install_dxvk_local || log_warn "DXVK não instalado automaticamente"; fi
+  if [[ "$dxopt" =~ ^[sSyY]$ ]]; then install_dxvk_local || log_warn "DXVK não instalado automaticamente"; fi
   echo "Deseja criar prefix template (wow64) rápido? [S/n]"
   read -r wowopt; wowopt=${wowopt:-s}
-  if [[ "$wowopt" =~ ^[sSyY] ]]; then install_wow64_quick || log_warn "Falha no template wow64"
+  if [[ "$wowopt" =~ ^[sSyY]$ ]]; then install_wow64_quick || log_warn "Falha no template wow64"
   fi
   log_ok "Instalação concluída."
   post_install_select_and_run
