@@ -32,8 +32,12 @@ spinner_bg() {
 }
 
 download() {
-  local url="$1" dest="$2" name="${3:-file}"
+ local url dest name
+  url="${1:-}"
+  dest="${2:-}"
+  name="${3:-file}"
   local attempt=1
+
   while [ $attempt -le $MAX_RETRIES ]; do
     log_info "Baixando $name (tentativa $attempt/$MAX_RETRIES)"
     rm -f "$dest"
@@ -45,10 +49,10 @@ download() {
     attempt=$((attempt+1))
     sleep $RETRY_DELAY
   done
+
   log_err "Não foi possível baixar $name após $MAX_RETRIES tentativas"
   return 1
 }
-
 get_ge_url() {
   local repo="GloriousEggroll/wine-ge-custom"
   local tag
