@@ -235,7 +235,9 @@ valid_install() {
 }
 
 create_prefix() {
-  local name="$1" arch="$2" p="$PREFIXES_DIR/$name"
+  local name="$1"
+  local arch="$2"
+  local p="$PREFIXES_DIR/$name"
   mkdir -p "$p"
   local winebin="$INSTALL_DIR/bin/wine"
   local wine64bin="$INSTALL_DIR/bin/wine64"
