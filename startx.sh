@@ -1,763 +1,236 @@
-#!/bin/bash
-# Portable Game Launcher — SEM SUDO
-# Corrigido e robustecido: checagem runtime 32-bit, detecção PE mais confiável,
-# evita RLIMIT_NICE, mensagens claras e melhor tratamento de extração/instalação.
+#!/usr/bin/env bash
+
 set -euo pipefail
-IFS=$'\n\t'
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
+BASE_DIR="$SCRIPT_DIR/portable-wine"
+WINE_DIR="$BASE_DIR/wine"
+PREFIX_DIR="$BASE_DIR/prefix"
+DOWNLOAD_DIR="$BASE_DIR/download"
 
-# Detecta desktop em português ou inglês
-if [ -d "$HOME/Área de Trabalho" ]; then
-    DESKTOP="$HOME/Área de Trabalho"
-elif [ -d "$HOME/Desktop" ]; then
-    DESKTOP="$HOME/Desktop"
-else
-    mkdir -p "$HOME/Desktop"
-    DESKTOP="$HOME/Desktop"
-fi
+WINE_VARIANT="${WINE_VARIANT:-vanilla}"
 
-WINE67_DIR="$DESKTOP/Wine67"
-mkdir -p "$WINE67_DIR"
+REPO="Kron4ek/Wine-Builds"
+API_LATEST="https://api.github.com/repos/${REPO}/releases/latest"
 
-INSTALL_DIR="$WINE67_DIR/wine"
-WINE_BIN="$INSTALL_DIR/bin/wine64"
+FALLBACK_VERSION="11.15"
 
-# Colors
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
-CYAN='\033[0;36m'; BOLD='\033[1m'; DIM='\033[2m'; RESET='\033[0m'
-MAGENTA='\033[0;35m'; BLUE='\033[0;34m'; WHITE='\033[1;37m'
+log()  { printf '\n==> %s\n' "$1" >&2; }
+err()  { printf 'Erro: %s\n' "$1" >&2; }
+have() { command -v "$1" >/dev/null 2>&1; }
 
-DESKTOP_SESSION="${DESKTOP_SESSION:-xfce}"
-XDG_SESSION_TYPE="${XDG_SESSION_TYPE:-x11}"
-WINE_ARCH="win64"
-WINE_ARCH_SUPPORT="wow64"  # Default: wow64 (64-bit + 32-bit), "win64", "win32"
-MAX_RETRIES=3
-RETRY_DELAY=5
-WINE_TYPE=""
-
-erro()  { echo -e "${RED}❌  $1${RESET}"; exit 1; }
-ok()    { echo -e "${GREEN}✔   $1${RESET}"; }
-info()  { echo -e "${CYAN}➜   $1${RESET}"; }
-aviso() { echo -e "${YELLOW}⚠   $1${RESET}"; }
-
-spinner() {
-    local pid=$1
-    local msg="${2:-Carregando...}"
-    local spin='/-\\|'
-    local i=0
-    while kill -0 "$pid" 2>/dev/null; do
-        local c="${spin:$i:1}"
-        echo -ne "\r  ${CYAN}[${c}]${RESET}  ${msg}"
-        i=$(( (i+1) % ${#spin} ))
-        sleep 0.1
-    done
-    echo -ne "\r  ${GREEN}[✔]${RESET}  ${msg}\n"
+fetch() {
+  local url="$1" dest="$2"
+  if have curl; then
+    curl -fL --progress-bar -o "$dest" "$url"
+  elif have wget; then
+    wget -q --show-progress -O "$dest" "$url"
+  else
+    err "Preciso de 'curl' ou 'wget' para baixar o Wine, e não achei nenhum dos dois."
+    exit 1
+  fi
 }
 
-
-exibir_logo() {
-    command -v clear >/dev/null 2>&1 && clear || printf '\033[2J\033[H'
-
-    local L0="  ██╗    ██╗██╗███╗   ██╗███████╗  ██████╗  ███████╗  "
-    local L1="  ██║    ██║██║████╗  ██║██╔════╝ ██╔════╝  ╚════██║  "
-    local L2="  ██║ █╗ ██║██║██╔██╗ ██║█████╗   ███████╗      ██╔╝  "
-    local L3="  ██║███╗██║██║██║╚██╗██║██╔══╝   ██╔═══██╗    ██╔╝   "
-    local L4="  ╚███╔███╔╝██║██║ ╚████║███████╗ ╚██████╔╝    ██║    "
-    local L5="   ╚══╝╚══╝ ╚═╝╚═╝  ╚═══╝╚══════╝  ╚═════╝     ╚═╝   "
-
-
-    local LOGO_W
-    LOGO_W=$(printf '%s' "$L0" | wc -m 2>/dev/null)
-
-    [ "${LOGO_W:-0}" -lt 10 ] && LOGO_W=54
-
-    local TERM_W
-    TERM_W=$(tput cols 2>/dev/null || echo 80)
-
-    local CENTER_POS=$(( (TERM_W - LOGO_W) / 2 ))
-    [ $CENTER_POS -lt 0 ] && CENTER_POS=0
-
-
-    _logo_frame() {
-        local col=$1  # coluna de início (1-based para tput cup)
-        local row
-        local line
-        local col1=$(( col + 1 ))   # tput cup usa 0-based; printf \033[r;cH usa 1-based
-        for row in 1 2 3 4 5 6; do
-            case $row in
-                1) line="$L0" ;; 2) line="$L1" ;; 3) line="$L2" ;;
-                4) line="$L3" ;; 5) line="$L4" ;; 6) line="$L5" ;;
-            esac
-            # Posiciona cursor na linha (2+row-1) coluna col (ambos 1-based)
-            printf '\033[%d;%dH' "$(( row + 1 ))" "$col1"
-            printf '\033[K'
-            printf '%b' "${MAGENTA}${BOLD}${line}${RESET}"
-        done
-    }
-
-    # Desliga autowrap para que linhas longas sejam cortadas em vez de quebradas
-    printf '\033[?7l'
-    tput civis 2>/dev/null || true
-    # Guarda o estado do trap e restaura no final
-    trap 'printf "\033[?7h"; tput cnorm 2>/dev/null || true; printf "%b" "${RESET}"; trap - EXIT INT TERM' EXIT INT TERM
-
-    local r
-    for r in 1 2 3 4 5 6 7; do
-        printf '\033[%d;1H\033[K' "$r"
-    done
-
-    # Animação: logo entra pela direita (col = TERM_W) e para em CENTER_POS
-    local step
-    for (( step=TERM_W; step>CENTER_POS; step-=2 )); do
-        _logo_frame "$step"
-        sleep 0.02
-    done
-
-    # Frame final: posição central exata
-    _logo_frame "$CENTER_POS"
-
-    # Restaura autowrap e cursor; posiciona cursor logo abaixo da logo
-    printf '\033[?7h'
-    tput cnorm 2>/dev/null || true
-    trap - EXIT INT TERM
-
-    printf '\033[9;1H'
-
-    echo ""
-    echo -e "  ${WHITE}${BOLD}Portable Game Launcher — SEM SUDO${RESET}"
-    echo -e "  ${DIM}Base: $WINE67_DIR${RESET}"
-    echo -e "  ${DIM}Desktop: $DESKTOP_SESSION  |  Sessão: $XDG_SESSION_TYPE${RESET}"
-    echo ""
-    echo -e "  ${DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
-    echo ""
+fetch_stdout() {
+  local url="$1"
+  if have curl; then
+    curl -fsSL "$url" 2>/dev/null || true
+  elif have wget; then
+    wget -qO- "$url" 2>/dev/null || true
+  fi
 }
 
+wine_installed() { [ -x "$WINE_DIR/bin/wine" ]; }
 
-# MENU DE SELECAO DE MODO
-selecionar_modo() {
-    echo -e "  ${CYAN}${BOLD}Selecione o modo de execução:${RESET}"
-    echo ""
-    echo -e "  ${YELLOW}[1]${RESET}  ${BOLD}Proton-GE${RESET}  ${DIM}— melhor compatibilidade, jogos Steam${RESET}"
-    echo -e "  ${YELLOW}[2]${RESET}  ${BOLD}Wine-GE${RESET}    ${DIM}— leve, direto, jogos nativos Windows${RESET}"
-    echo ""
-    echo -ne "  ${CYAN}Escolha (1 ou 2): ${RESET}"
-    read -r WINE_CHOICE
-
-    case "$WINE_CHOICE" in
-        1) WINE_TYPE="proton-ge"; ok "Modo: Proton-GE" ;;
-        2) WINE_TYPE="wine-ge";   ok "Modo: Wine-GE"   ;;
-        *) erro "Opção inválida: '$WINE_CHOICE'" ;;
-    esac
-    echo ""
+check_arch() {
+  local m
+  m="$(uname -m)"
+  if [ "$m" != "x86_64" ]; then
+    err "Este script foi feito para máquinas x86_64 (encontrei: $m)."
+    err "Os builds do Wine usados aqui não cobrem outras arquiteturas."
+    exit 1
+  fi
 }
 
-# MENU DE SELECAO DE ARQUITETURA
-selecionar_arquitetura() {
-    echo -e "  ${CYAN}${BOLD}Selecione suporte de arquitetura:${RESET}"
-    echo ""
-    echo -e "  ${YELLOW}[1]${RESET}  ${BOLD}WoW64${RESET} (64-bit + 32-bit) ${DIM}— melhor compatibilidade universal${RESET}"
-    echo -e "  ${YELLOW}[2]${RESET}  ${BOLD}64-bit puro${RESET}           ${DIM}— apenas aplicativos 64-bit${RESET}"
-    echo -e "  ${YELLOW}[3]${RESET}  ${BOLD}32-bit puro${RESET}           ${DIM}— apenas aplicativos 32-bit${RESET}"
-    echo ""
-    echo -ne "  ${CYAN}Escolha (1, 2 ou 3): ${RESET}"
-    read -r ARCH_CHOICE
-
-    case "$ARCH_CHOICE" in
-        1) WINE_ARCH_SUPPORT="wow64"; ok "Modo: WoW64 (64-bit + 32-bit)" ;;
-        2) WINE_ARCH_SUPPORT="win64"; ok "Modo: 64-bit puro" ;;
-        3) WINE_ARCH_SUPPORT="win32"; ok "Modo: 32-bit puro" ;;
-        *) erro "Opção inválida: '$ARCH_CHOICE'" ;;
-    esac
-    echo ""
+variant_regex() {
+  if [ "$WINE_VARIANT" = "staging" ]; then
+    printf 'wine-[0-9.]+-staging-amd64-wow64\.tar\.xz'
+  else
+    printf 'wine-[0-9.]+-amd64-wow64\.tar\.xz'
+  fi
 }
 
+get_download_url() {
+  local pattern json url=""
+  pattern="$(variant_regex)"
 
-# VALIDAR DEPENDENCIAS
-if ! command -v curl >/dev/null 2>&1; then
-    erro "curl não instalado!\n  Ubuntu/Debian: apt install curl\n  Fedora: dnf install curl"
-fi
-if ! command -v tar >/dev/null 2>&1; then
-    erro "tar não instalado!"
-fi
+  json="$(fetch_stdout "$API_LATEST")"
+  if [ -n "$json" ]; then
+    url="$(printf '%s' "$json" \
+      | grep -oE '"browser_download_url": *"[^"]+"' \
+      | grep -E "$pattern" \
+      | sed -E 's/.*"(https:[^"]+)".*/\1/' \
+      | head -n1 || true)"
+  fi
 
-mkdir -p "$INSTALL_DIR"
+  if [ -z "$url" ]; then
+    local suffix="amd64-wow64.tar.xz"
+    [ "$WINE_VARIANT" = "staging" ] && suffix="staging-amd64-wow64.tar.xz"
+    url="https://github.com/${REPO}/releases/download/${FALLBACK_VERSION}/wine-${FALLBACK_VERSION}-${suffix}"
+    log "Não consegui falar com a API do GitHub (pode ser limite de taxa)."
+    log "Usando versão de reserva fixa: $FALLBACK_VERSION"
+  fi
 
-# -- Garantir que Wine não tente ajustar prioridade quando não permitido
-export WINE_DO_NOT_SET_NICE="${WINE_DO_NOT_SET_NICE:-1}"
-
-# DETECTAR URLs 
-obter_url() {
-    local tipo="$1"
-
-    if [ "$tipo" = "proton-ge" ]; then
-        local repo="GloriousEggroll/proton-ge-custom"
-        local fallback_tag="GE-Proton10-34"
-        local fallback_file="GE-Proton10-34.tar.gz"
-    else
-        local repo="GloriousEggroll/wine-ge-custom"
-        local fallback_tag="GE-Proton8-26"
-        local fallback_file="wine-lutris-GE-Proton8-26-x86_64.tar.xz"
-    fi
-
-    info "Detectando versão mais recente de $tipo..." >&2
-
-    local tag
-    tag=$(curl -s --max-time 15 "https://api.github.com/repos/${repo}/releases/latest" \
-          | grep '"tag_name"' | head -1 | cut -d'"' -f4 || true)
-
-    if [ -n "$tag" ]; then
-        info "Versão detectada: $tag" >&2
-        if [ "$tipo" = "proton-ge" ]; then
-            echo "https://github.com/${repo}/releases/download/${tag}/${tag}.tar.gz"
-        else
-            echo "https://github.com/${repo}/releases/download/${tag}/wine-lutris-${tag}-x86_64.tar.xz"
-        fi
-        return 0
-    fi
-
-    aviso "API indisponível — usando fallback: $fallback_tag" >&2
-    echo "https://github.com/${repo}/releases/download/${fallback_tag}/${fallback_file}"
+  printf '%s' "$url"
 }
 
-baixar() {
-    local url="$1"
-    local dest="$2"
-    local nome="$3"
-    local attempt=1
+install_wine() {
+  check_arch
 
-    while [ $attempt -le $MAX_RETRIES ]; do
-        info "Baixando $nome (tentativa $attempt/$MAX_RETRIES)..."
-        rm -f "$dest" || true
-
-        if curl -L --max-time 600 -# -o "$dest" "$url" 2>&1; then
-            if [ -f "$dest" ] && [ -s "$dest" ]; then
-                ok "Download completo! ($(du -h "$dest" | cut -f1))"
-                return 0
-            fi
-        fi
-
-        rm -f "$dest" || true
-        if [ $attempt -lt $MAX_RETRIES ]; then
-            aviso "Falha na tentativa $attempt. Aguardando ${RETRY_DELAY}s..."
-            sleep $RETRY_DELAY
-        fi
-        attempt=$((attempt + 1))
-    done
-
-    erro "Falha ao baixar $nome após $MAX_RETRIES tentativas"
-}
-
-# ACHAR TAR
-buscar_tar() {
-    local tipo="$1"
-    local resultado=""
-
-    if [ "$tipo" = "proton-ge" ]; then
-        local padroes=("GE-Proton*.tar.gz" "Proton-*.tar.gz" "proton-*.tar.xz")
-    else
-        local padroes=("wine-lutris-*.tar.xz" "wine-lutris-*.tar.gz" "Wine-*.tar.gz" "wine-ge-*.tar.xz")
-    fi
-
-    for padrao in "${padroes[@]}"; do
-        resultado=$(find "$SCRIPT_DIR" -maxdepth 3 -name "$padrao" 2>/dev/null | head -1 || true)
-        [ -n "$resultado" ] && echo "$resultado" && return 0
-        resultado=$(find /media /run/media /mnt -maxdepth 5 -name "$padrao" 2>/dev/null | head -1 || true)
-        [ -n "$resultado" ] && echo "$resultado" && return 0
-    done
-    return 1
-}
-
-# VALIDAR INSTALACAO
-validar_instalacao() {
-    if [ ! -f "$INSTALL_DIR/bin/wine64" ] && \
-       [ ! -f "$INSTALL_DIR/bin/wine"   ] && \
-       [ ! -f "$INSTALL_DIR/proton"     ]; then
-        return 1
-    fi
-    if [ ! -d "$INSTALL_DIR/lib" ] && [ ! -d "$INSTALL_DIR/lib64" ]; then
-        return 1
-    fi
+  if wine_installed; then
     return 0
+  fi
+
+  mkdir -p "$BASE_DIR" "$DOWNLOAD_DIR" "$PREFIX_DIR"
+
+  log "Procurando a versão mais recente do Wine ($WINE_VARIANT, wow64)..."
+  local url filename dest
+  url="$(get_download_url)"
+  filename="$(basename "$url")"
+  dest="$DOWNLOAD_DIR/$filename"
+
+  log "Baixando $filename (isso pode levar alguns minutos)"
+  fetch "$url" "$dest"
+
+  log "Extraindo para $WINE_DIR"
+  mkdir -p "$WINE_DIR"
+  if ! tar -xf "$dest" -C "$WINE_DIR" --strip-components=1; then
+    err "Falha ao extrair. Verifique se o pacote 'xz-utils' (ou similar) está disponível no sistema."
+    exit 1
+  fi
+  rm -f "$dest"
+
+  if ! wine_installed; then
+    err "A extração terminou mas não encontrei $WINE_DIR/bin/wine."
+    exit 1
+  fi
+
+  log "Instalado! $("$WINE_DIR/bin/wine" --version)"
+  log "O prefixo Wine (registro, C:\\ virtual etc.) será criado em: $PREFIX_DIR"
+  log "na primeira vez que você rodar um programa."
 }
 
-diagnosticar_estrutura() {
-    info "Diagnosticando estrutura..."
-    echo ""
-    echo "  📁 Conteúdo de $INSTALL_DIR:"
-    ls -1 "$INSTALL_DIR" 2>/dev/null | head -20 | sed 's/^/    /' || echo "    [vazio]"
-    echo ""
-    echo "  📦 Tamanho:"
-    du -sh "$INSTALL_DIR" 2>/dev/null | sed 's/^/    /' || true
+find_exes() {
+  local dir="${1:-.}"
+  find "$dir" -maxdepth 3 -type f -iname '*.exe' -not -path '*/portable-wine/*' 2>/dev/null | sort
 }
 
+run_exe() {
+  local exe="$1"
+  if [ ! -f "$exe" ]; then
+    err "Arquivo não encontrado: $exe"
+    exit 1
+  fi
+  local dir base
+  dir="$(cd -- "$(dirname -- "$exe")" && pwd)"
+  base="$(basename -- "$exe")"
 
-instalar() {
-    local tipo="$1"
-    local nome_display
-    nome_display=$([ "$tipo" = "proton-ge" ] && echo "Proton-GE" || echo "Wine-GE")
+  log "Rodando: $base"
+  (
+    cd "$dir"
+    WINEPREFIX="$PREFIX_DIR" WINEARCH=win64 PATH="$WINE_DIR/bin:$PATH" \
+      "$WINE_DIR/bin/wine" "$base"
+  )
+}
 
-    info "Instalando $nome_display..."
+show_menu() {
+  local dir="${1:-.}"
+  local exes=()
+  while IFS= read -r line; do
+    [ -n "$line" ] && exes+=("$line")
+  done < <(find_exes "$dir")
 
-    if [ -d "$INSTALL_DIR" ] && [ "$(ls -A "$INSTALL_DIR" 2>/dev/null || true)" ]; then
-        aviso "Removendo instalação anterior..."
-        rm -rf "$INSTALL_DIR"
-        mkdir -p "$INSTALL_DIR"
-    fi
+  if [ "${#exes[@]}" -eq 0 ]; then
+    err "Nenhum arquivo .exe encontrado em: $(cd "$dir" && pwd)"
+    exit 1
+  fi
 
-    local GE_TAR
-    if GE_TAR=$(buscar_tar "$tipo"); then
-        ok "Arquivo local encontrado: $GE_TAR"
+  echo "Executáveis encontrados em $(cd "$dir" && pwd):"
+  PS3=$'\nEscolha um número para rodar (Ctrl+C cancela): '
+  select exe in "${exes[@]}"; do
+    if [ -n "${exe:-}" ]; then
+      run_exe "$exe"
+      break
     else
-        local DL_URL
-        DL_URL=$(obter_url "$tipo")
-        local ext=".tar.gz"
-        [[ "$DL_URL" == *.tar.xz ]] && ext=".tar.xz"
-        GE_TAR="$INSTALL_DIR/wine_download${ext}"
-        baixar "$DL_URL" "$GE_TAR" "$nome_display"
+      echo "Opção inválida, tente de novo."
     fi
-
-    local TAR_FLAG TEST_FLAG
-    case "$GE_TAR" in
-        *.tar.xz) TAR_FLAG="-xJf"; TEST_FLAG="-tJf" ;;
-        *.tar.gz) TAR_FLAG="-xzf"; TEST_FLAG="-tzf" ;;
-        *)        TAR_FLAG="-xf";  TEST_FLAG="-tf"   ;;
-    esac
-
-    info "Verificando integridade do arquivo..."
-    if ! tar "$TEST_FLAG" "$GE_TAR" >/dev/null 2>&1; then
-        rm -f "$GE_TAR" || true
-        erro "Arquivo corrompido ou incompleto."
-    fi
-    ok "Arquivo verificado."
-
-    info "Extraindo $nome_display..."
-    rm -rf "$INSTALL_DIR/temp_extract" || true
-    mkdir -p "$INSTALL_DIR/temp_extract"
-
-    tar "$TAR_FLAG" "$GE_TAR" -C "$INSTALL_DIR/temp_extract" &
-    local tar_pid=$!
-    spinner "$tar_pid" "Extraindo $nome_display..."
-    wait "$tar_pid" || true
-
-    info "Reorganizando estrutura..."
-    local top_dir
-    top_dir=$(find "$INSTALL_DIR/temp_extract" -maxdepth 1 -mindepth 1 -type d | head -1 || true)
-
-    if [ -n "$top_dir" ]; then
-        # move preservando permissões; ignore erros de arquivos ocultos inexistentes
-        shopt -s dotglob 2>/dev/null || true
-        mv "$top_dir"/* "$INSTALL_DIR/" 2>/dev/null || true
-        mv "$top_dir"/.[!.]* "$INSTALL_DIR/" 2>/dev/null || true
-        shopt -u dotglob 2>/dev/null || true
-    fi
-
-    rm -rf "$INSTALL_DIR/temp_extract" || true
-    rm -f "$GE_TAR" || true
-
-    info "Configurando permissões..."
-    find "$INSTALL_DIR" -type f \( -name "wine*" -o -name "proton" \) \
-        -exec chmod +x {} \; 2>/dev/null || true
-
-    if ! validar_instalacao; then
-        diagnosticar_estrutura
-        erro "FALHA: $nome_display não foi instalado corretamente."
-    fi
-
-    ok "$nome_display instalado com sucesso!"
+  done
 }
 
-# DETECTAR ARQUITETURA DO .EXE 
-# Versão robusta: usa file quando disponível e faz leitura do cabeçalho PE (e_lfanew + Machine)
-detectar_arquitetura_exe() {
-    local exe="$1"
+print_help() {
+  cat <<'EOF'
+wine-portatil.sh — Wine portátil sem sudo, dentro de uma pasta local.
 
-    if [ ! -f "$exe" ]; then
-        return 1
-    fi
+USO:
+  ./wine-portatil.sh                    Instala o Wine (se necessário) e
+                                         mostra um menu com os .exe da
+                                         pasta atual para escolher e rodar.
+  ./wine-portatil.sh <pasta>             Mesma coisa, procurando .exe dentro
+                                         de <pasta>.
+  ./wine-portatil.sh <programa.exe>     Roda esse .exe diretamente.
+  ./wine-portatil.sh --lista [pasta]    Só lista os .exe encontrados.
+  ./wine-portatil.sh --instalar         Só baixa/instala o Wine.
+  ./wine-portatil.sh --winecfg          Abre o winecfg do prefixo portátil.
+  ./wine-portatil.sh --shell            Abre um shell com wine no PATH.
+  ./wine-portatil.sh --ajuda            Mostra esta mensagem.
 
-    # Preferir 'file' se disponível
-    if command -v file >/dev/null 2>&1; then
-        local f
-        f=$(file -b "$exe" 2>/dev/null || true)
-        if echo "$f" | grep -qiE "(x86-64|x86_64|64-bit|PE32\+|PE32\+ executable)"; then
-            echo "win64"
-            return 0
-        elif echo "$f" | grep -qiE "(Intel 80386|80386|i386|32-bit|PE32 )"; then
-            echo "win32"
-            return 0
-        fi
-    fi
+Tudo fica dentro de ./portable-wine, ao lado deste script. Nada usa sudo.
+Para "desinstalar", basta apagar essa pasta.
 
-    # Fallback: ler e_lfanew no offset 0x3C (4 bytes little-endian) e depois Machine type em +4
-    if command -v dd >/dev/null 2>&1 && command -v od >/dev/null 2>&1; then
-        # lê 4 bytes em 0x3C
-        local e_lfanew_bytes
-        e_lfanew_bytes=$(dd if="$exe" bs=1 skip=60 count=4 2>/dev/null | od -An -t u1 | tr -s ' ' | sed 's/^ *//' | tr '\n' ' ' | sed 's/ $//' || true)
-        if [ -n "$e_lfanew_bytes" ]; then
-            # converte para número little-endian
-            local b1 b2 b3 b4
-            read -r b1 b2 b3 b4 <<<"$e_lfanew_bytes"
-            if [ -n "$b1" ] && [ -n "$b2" ]; then
-                local e_lfanew=$(( b1 + (b2<<8) + (b3<<16) + (b4<<24) ))
-                # lê 2 bytes do Machine (e_lfanew + 4)
-                local machine_bytes
-                machine_bytes=$(dd if="$exe" bs=1 skip=$((e_lfanew + 4)) count=2 2>/dev/null | od -An -t u1 | tr -s ' ' | sed 's/^ *//' | tr '\n' ' ' | sed 's/ $//' || true)
-                if [ -n "$machine_bytes" ]; then
-                    local m1 m2
-                    read -r m1 m2 <<<"$machine_bytes"
-                    # machine é little-endian: m1 + (m2<<8)
-                    local machine=$(( m1 + (m2<<8) ))
-                    case "$machine" in
-                        34404|0x8664|8664) echo "win64"; return 0 ;; # 0x8664 = 34404 decimal
-                        332|0x014c|332) echo "win32"; return 0 ;;    # 0x014c = 332 decimal
-                    esac
-                fi
-            fi
-        fi
-    fi
-
-    # Padrão seguro
-    echo "win64"
+Variante do Wine (defina antes de rodar):
+  WINE_VARIANT=vanilla ./wine-portatil.sh   (padrão) Wine sem patches extras
+  WINE_VARIANT=staging ./wine-portatil.sh   Com patches extras de compatibilidade
+EOF
 }
 
-
-detectar_multilib() {
-    # Verifica se o Wine foi compilado com suporte a 32-bit
-    if [ -d "$INSTALL_DIR/lib" ] && [ -d "$INSTALL_DIR/lib64" ]; then
-        return 0  # Ambas presentes = suporte completo
-    fi
-    if [ -d "$INSTALL_DIR/lib32" ] && [ -d "$INSTALL_DIR/lib64" ]; then
-        return 0  # lib32 + lib64
-    fi
-    return 1  # Sem suporte a 32-bit
-}
-
-
-configurar_wow64() {
-    if ! detectar_multilib; then
-        aviso "Instalação Wine sem suporte a 32-bit (lib32) — usando 64-bit puro"
-        WINE_ARCH_SUPPORT="win64"
-        return 1
-    fi
-
-    info "Configurando WoW64 (64-bit + 32-bit)..."
-    WINE_BIN="$INSTALL_DIR/bin/wine64"
-
-    # Configura paths para 32-bit libs
-    if [ -d "$INSTALL_DIR/lib32" ]; then
-        export LD_LIBRARY_PATH="$INSTALL_DIR/lib32:$INSTALL_DIR/lib64:$INSTALL_DIR/lib:${LD_LIBRARY_PATH:-}"
+case "${1:-}" in
+  --ajuda|--help|-h)
+    print_help
+    ;;
+  --instalar|--install)
+    install_wine
+    log "Pronto. Wine em: $WINE_DIR"
+    ;;
+  --winecfg)
+    install_wine
+    WINEPREFIX="$PREFIX_DIR" WINEARCH=win64 "$WINE_DIR/bin/wine" winecfg
+    ;;
+  --shell)
+    install_wine
+    log "Shell com Wine portátil no PATH (rode 'wine programa.exe'; 'exit' sai)"
+    export WINEPREFIX="$PREFIX_DIR"
+    export WINEARCH=win64
+    export PATH="$WINE_DIR/bin:$PATH"
+    exec "${SHELL:-bash}"
+    ;;
+  --lista|--list)
+    install_wine
+    find_exes "${2:-.}"
+    ;;
+  "")
+    install_wine
+    show_menu "."
+    ;;
+  *)
+    install_wine
+    if [ -f "$1" ]; then
+      run_exe "$1"
+    elif [ -d "$1" ]; then
+      show_menu "$1"
     else
-        export LD_LIBRARY_PATH="$INSTALL_DIR/lib64:$INSTALL_DIR/lib:${LD_LIBRARY_PATH:-}"
+      err "Não entendi o argumento: $1"
+      print_help
+      exit 1
     fi
-
-    return 0
-}
-
-# Função que verifica se existe loader 32-bit no host
-checar_runtime_32bit() {
-    local ld_paths=(
-        "/lib/ld-linux.so.2"
-        "/lib32/ld-linux.so.2"
-        "/usr/lib32/ld-linux.so.2"
-        "/lib/i386-linux-gnu/ld-linux.so.2"
-        "/usr/lib/i386-linux-gnu/ld-linux.so.2"
-    )
-    for p in "${ld_paths[@]}"; do
-        [ -e "$p" ] && return 0
-    done
-    return 1
-}
-
-
-# INICIO
-exibir_logo
-selecionar_modo
-selecionar_arquitetura
-
-# Instala se necessário
-if ! validar_instalacao; then
-    instalar "$WINE_TYPE"
-fi
-
-# DETECTAR BINARIOS
-PROTON_BINARY=""
-if [ -f "$INSTALL_DIR/proton" ]; then
-    PROTON_BINARY="$INSTALL_DIR/proton"
-    WINE_BIN="$INSTALL_DIR/bin/wine64"
-elif [ -f "$INSTALL_DIR/bin/wine64" ]; then
-    WINE_BIN="$INSTALL_DIR/bin/wine64"
-elif [ -f "$INSTALL_DIR/bin/wine" ]; then
-    WINE_BIN="$INSTALL_DIR/bin/wine"
-else
-    erro "Nenhum binário Wine/Proton encontrado em $INSTALL_DIR"
-fi
-
-chmod +x "$WINE_BIN" 2>/dev/null || true
-[ -n "$PROTON_BINARY" ] && chmod +x "$PROTON_BINARY" 2>/dev/null || true
-
-ok "Wine bin: $WINE_BIN"
-[ -n "$PROTON_BINARY" ] && ok "Proton:   $PROTON_BINARY"
-
-# VARIAVEIS DE AMBIENTE
-export LD_LIBRARY_PATH="$INSTALL_DIR/lib64:$INSTALL_DIR/lib:${LD_LIBRARY_PATH:-}"
-export PATH="$INSTALL_DIR/bin:$PATH"
-export WINELOADER="$WINE_BIN"
-export WINESERVER="$INSTALL_DIR/bin/wineserver"
-export DXVK_HUD=off
-export STAGING_SHARED_MEMORY=1
-export WINEDLLOVERRIDES="winemenubuilder=d;rpcss=n;midimap=n"
-
-if [ "$WINE_TYPE" = "proton-ge" ]; then
-    export PROTON_USE_WINED3D=0
-
-    _has_futex2() {
-        grep -qw "futex_waitv" /proc/kallsyms 2>/dev/null && return 0
-        [ -e /dev/futex-waitv ] && return 0
-        return 1
-    }
-    if _has_futex2; then
-        export PROTON_NO_ESYNC=0
-        export PROTON_NO_FSYNC=0
-        export WINEESYNC=1
-        export WINEFSYNC=1
-    else
-        export PROTON_NO_ESYNC=1
-        export PROTON_NO_FSYNC=1
-        export WINEESYNC=0
-        export WINEFSYNC=0
-        export WINE_DISABLE_FAST_SYNC=1
-        aviso "Kernel sem futex_waitv — esync/fsync desativados (evita server-side sync)"
-    fi
-else
-    _has_futex2() {
-        grep -qw "futex_waitv" /proc/kallsyms 2>/dev/null && return 0
-        [ -e /dev/futex-waitv ] && return 0
-        return 1
-    }
-    if _has_futex2; then
-        export WINEESYNC=1
-        export WINEFSYNC=1
-    else
-        export WINEESYNC=0
-        export WINEFSYNC=0
-        export WINE_DISABLE_FAST_SYNC=1
-        aviso "Kernel sem futex_waitv — esync/fsync desativados"
-    fi
-fi
-
-
-if ulimit -e 40 2>/dev/null; then
-    : # elevou com sucesso
-else
-    export WINE_DO_NOT_SET_NICE=1
-fi
-
-export STAGING_WRITECOPY=1
-
-if [ "$XDG_SESSION_TYPE" = "wayland" ]; then
-    aviso "Detectado Wayland — aplicando compatibilidade X11"
-    export GDK_BACKEND=x11
-    export QT_QPA_PLATFORM=xcb
-fi
-
-[ -z "${DISPLAY:-}" ] && export DISPLAY=:0
-
-MODO_LABEL=$([ "$WINE_TYPE" = "proton-ge" ] && echo "Proton-GE 🚀" || echo "Wine-GE 🍷")
-info "Modo ativo: $MODO_LABEL + DXVK"
-
-if command -v pactl >/dev/null 2>&1 && pactl info >/dev/null 2>&1; then
-    ok "Áudio: PulseAudio"
-elif [ -S "${XDG_RUNTIME_DIR:-/run/user/1000}/pipewire-0" ] 2>/dev/null; then
-    ok "Áudio: PipeWire"
-fi
-
-
-# BUSCAR JOGOS (.EXE)
-echo ""
-echo -e "  ${DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
-echo ""
-info "Escaneando diretórios em busca de jogos..."
-
-declare -a EXES
-declare -a SEARCH_PATHS=(
-    "$WINE67_DIR"
-    "$HOME/Downloads"
-    "$HOME/Descargas"
-    "$HOME/Transferências"
-    "/media"
-    "/mnt"
-    "$SCRIPT_DIR"
-)
-
-for search_path in "${SEARCH_PATHS[@]}"; do
-    if [ -d "$search_path" ]; then
-        while IFS= read -r exe_file; do
-            EXES+=("$exe_file")
-        done < <(find "$search_path" -maxdepth 10 -type f -iname "*.exe" 2>/dev/null || true)
-    fi
-done
-
-declare -a UNIQUE_EXES
-declare -A SEEN_EXES
-for exe in "${EXES[@]+"${EXES[@]}"}"; do
-    if [ -z "${SEEN_EXES[$exe]:-}" ]; then
-        UNIQUE_EXES+=("$exe")
-        SEEN_EXES[$exe]=1
-    fi
-done
-
-IFS=$'\n' UNIQUE_EXES=( $(printf "%s\n" "${UNIQUE_EXES[@]}" | sort -u) )
-
-SELECTED=""
-if [ ${#UNIQUE_EXES[@]} -eq 0 ]; then
-    echo ""
-    aviso "Nenhum .exe encontrado automaticamente."
-    echo -ne "  ${CYAN}Informe o caminho do .exe: ${RESET}"
-    read -r SELECTED
-    SELECTED="${SELECTED//\'/}"; SELECTED="${SELECTED//\"/}"
-    SELECTED="${SELECTED# }";    SELECTED="${SELECTED% }"
-    [ -f "$SELECTED" ] || erro "Arquivo não encontrado: '$SELECTED'"
-else
-    echo ""
-    echo -e "  ${BOLD}${WHITE}Jogos encontrados:${RESET}"
-    echo ""
-    for i in "${!UNIQUE_EXES[@]}"; do
-        echo -e "  ${YELLOW}[$((i+1))]${RESET}  ${BOLD}$(basename "${UNIQUE_EXES[$i]}")${RESET}"
-        echo -e "        ${DIM}${UNIQUE_EXES[$i]}${RESET}"
-    done
-    echo ""
-    echo -ne "  ${CYAN}Escolha o número: ${RESET}"
-    read -r CHOICE
-
-    if [[ "$CHOICE" =~ ^[0-9]+$ ]] && \
-       [ "$CHOICE" -ge 1 ] && \
-       [ "$CHOICE" -le "${#UNIQUE_EXES[@]}" ]; then
-        SELECTED="${UNIQUE_EXES[$((CHOICE-1))]}"
-    else
-        erro "Opção inválida: '$CHOICE'"
-    fi
-fi
-
-[ ! -f "$SELECTED" ] && erro "Arquivo não encontrado: '$SELECTED'"
-
-DETECTED_ARCH=$(detectar_arquitetura_exe "$SELECTED" || true)
-info "Arquitetura do exe detectada: $DETECTED_ARCH"
-
-# Se exe for 32-bit, checar runtime no host
-if [ "$DETECTED_ARCH" = "win32" ]; then
-    if ! checar_runtime_32bit; then
-        echo ""
-        echo -e "${RED}Erro: runtime 32-bit ausente no sistema (ex: /lib/ld-linux.so.2).${RESET}"
-        echo ""
-        echo "Para corrigir, instale as bibliotecas 32-bit para sua distribuição. Exemplos:" 
-        echo ""
-        echo "  Debian/Ubuntu (multiarch):"
-        echo "    sudo dpkg --add-architecture i386 && sudo apt update"
-        echo "    sudo apt install libc6:i386 libgl1:i386 libx11-6:i386"
-        echo ""
-        echo "  Fedora:"
-        echo "    sudo dnf install glibc.i686 mesa-libGL.i686 libX11.i686"
-        echo ""
-        echo "  Arch Linux (habilite multilib):"
-        echo "    sudo pacman -S lib32-glibc lib32-mesa lib32-libx11"
-        echo ""
-        echo "Ou use/instale uma build do Wine/Wine-GE que inclua libs 32-bit em $INSTALL_DIR."
-        exit 1
-    fi
-fi
-
-# DETERMINAR ARQUITETURA FINAL DO PREFIX
-case "$WINE_ARCH_SUPPORT" in
-    wow64)
-        # WoW64: sempre usar win64 (que suporta 32-bit via syswow64)
-        WINE_ARCH="win64"
-        info "Modo WoW64: usando prefix 64-bit com suporte a 32-bit"
-        configurar_wow64
-        ;;
-    win64)
-        WINE_ARCH="win64"
-        info "Modo 64-bit puro: apenas suporte a aplicativos 64-bit"
-        ;;
-    win32)
-        WINE_ARCH="win32"
-        info "Modo 32-bit puro: apenas suporte a aplicativos 32-bit"
-        # Usa wine ao invés de wine64
-        WINE_BIN="$INSTALL_DIR/bin/wine"
-        [ ! -f "$WINE_BIN" ] && WINE_BIN="$INSTALL_DIR/bin/wine64"
-        ;;
+    ;;
 esac
-
-GAME_NAME="$(basename "$SELECTED" .exe | tr -cd '[:alnum:]_-')"
-export WINEPREFIX="$WINE67_DIR/prefixes/$GAME_NAME"
-mkdir -p "$WINEPREFIX"
-
-
-_prefix_arch() {
-    local reg="$WINEPREFIX/system.reg"
-    local arch=""
-
-    if [ -f "$reg" ]; then
-        arch=$(grep -m1 '#arch=' "$reg" 2>/dev/null \
-               | sed 's/.*#arch=\([a-z0-9]*\).*/\1/' | tr -d '\r\n ' || true)
-    fi
-
-    # Fallback presença de syswow64 indica prefix win64
-    if [ -z "$arch" ]; then
-        if [ -d "$WINEPREFIX/drive_c/windows/syswow64" ]; then
-            arch="win64"
-        elif [ -d "$WINEPREFIX/drive_c/windows" ]; then
-            arch="win32"
-        fi
-    fi
-
-    echo "$arch"
-}
-
-if [ -f "$WINEPREFIX/system.reg" ]; then
-    existing_arch=$(_prefix_arch)
-    if [ -z "$existing_arch" ]; then
-        aviso "Não foi possível detectar arquitetura do prefix existente — recriando com $WINE_ARCH..."
-        rm -rf "$WINEPREFIX"
-        mkdir -p "$WINEPREFIX"
-    elif [ "$existing_arch" != "$WINE_ARCH" ]; then
-        aviso "Prefix existente é '$existing_arch' mas você escolheu '$WINE_ARCH'."
-        aviso "Recriando prefix com arquitetura correta ($WINE_ARCH)..."
-        rm -rf "$WINEPREFIX"
-        mkdir -p "$WINEPREFIX"
-    fi
-fi
-
-if [ ! -f "$WINEPREFIX/system.reg" ]; then
-    info "Criando prefix Windows ($WINE_ARCH)..."
-    WINEARCH="$WINE_ARCH" WINEPREFIX="$WINEPREFIX" \
-        "$WINE_BIN" wineboot -i 2>/dev/null &
-    boot_pid=$!
-    spinner "$boot_pid" "Inicializando ambiente Windows ($WINE_ARCH)..."
-    wait "$boot_pid" || true
-    ok "Prefix pronto ($WINE_ARCH)"
-fi
-
-echo ""
-echo -e "  ${GREEN}╔══════════════════════════════════════════════════════╗${RESET}"
-echo -e "  ${GREEN}║  🎮  $(basename "$SELECTED")${RESET}"
-echo -e "  ${GREEN}║  🔧  Arch: $WINE_ARCH (modo: $WINE_ARCH_SUPPORT)${RESET}"
-echo -e "  ${GREEN}║  🚀  $MODO_LABEL + DXVK${RESET}"
-echo -e "  ${GREEN}║  📁  Prefix: $GAME_NAME${RESET}"
-echo -e "  ${GREEN}╚══════════════════════════════════════════════════════╝${RESET}"
-echo ""
-
-
-# FINALMENTE EXECUTAR
-WINEARCH="$WINE_ARCH" \
-WINEPREFIX="$WINEPREFIX" \
-LD_LIBRARY_PATH="$INSTALL_DIR/lib64:$INSTALL_DIR/lib:${LD_LIBRARY_PATH:-}" \
-"$WINE_BIN" "$SELECTED"
-
-EXIT=$?
-echo ""
-if [ $EXIT -eq 0 ]; then
-    ok "Jogo encerrado normalmente."
-else
-    aviso "Jogo encerrado com código de saída: $EXIT"
-fi
