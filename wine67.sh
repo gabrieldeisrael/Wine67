@@ -160,7 +160,6 @@ instalar_wine() {
     spinner "$tar_pid" "Extraindo Wine (pode demorar)..."
     wait "$tar_pid" || erro "Falha ao extrair. Delete '$INSTALL_DIR' e tente novamente."
 
-    # Otimização: usar find com -print0 e xargs para chmod eficiente
     find "$INSTALL_DIR/bin" -type f -print0 2>/dev/null | xargs -0 chmod +x 2>/dev/null
     
     if [[ ! -f "$WINE_BIN" ]]; then
@@ -306,7 +305,6 @@ echo ""
 }
 echo ""
 
-# EXECUTAR - Usar array para argumentos seguros
 declare -a wine_args=("$SELECTED")
 [[ -n "$EXTRA_FLAGS" ]] && wine_args+=($EXTRA_FLAGS)
 
