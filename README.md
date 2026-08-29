@@ -1,26 +1,44 @@
-Wine67 / StartX
+# Wine67 / StartX
 
-O Wine67/StartX é um script utilitário para Linux que permite executar arquivos .exe diretamente de um pendrive (formatado em ExFAT) sem necessidade de privilégios de sudo (root).
-Como Usar:
+**Wine67** (também conhecido como **StartX**) é um script utilitário para Linux que permite rodar jogos e programas `.exe` direto de um pendrive (formatado em ExFAT), **sem precisar de privilégios de sudo/root** no PC host. Basta plugar e jogar.
 
-    Acesse o diretório: Abra o terminal na pasta onde os arquivos do StartX/Wine67 estão localizados.
+> ⚠️ **Recomendado: use o `wine67.sh`**
+> O projeto conta com mais de uma versão do script, mas o **`wine67.sh` é o mais estável** e o recomendado para uso no dia a dia. Prefira sempre essa versão ao rodar o projeto.
 
-    Dê permissão de execução: Execute o comando para liberar o script:
-    Bash
+## ✨ Funcionalidades
 
-    chmod +x nome_do_arquivo.sh
+- Roda executáveis `.exe` via **WineWOW64**
+- Não requer instalação nem permissões administrativas no computador host
+- Detecta automaticamente os arquivos `.exe` disponíveis no pendrive
+- Menu simples de seleção por número
 
-    Inicie o script: Rode o comando:
-    Bash
+## 📋 Pré-requisitos
 
-    ./nome_do_arquivo.sh
+- Pendrive formatado em **ExFAT**
+- Linux com WineWOW64 já disponível no sistema
+- Permissão de execução para o script (veja abaixo)
 
-    Escolha o motor de execução: No menu, selecione a opção ideal para o seu caso:
+## 🚀 Como usar
 
-        Opção 1 (Proton): Recomendado para jogos pesados e mais complexos.
+1. **Acesse o diretório**
+   Abra o terminal na pasta onde os arquivos do StartX/Wine67 estão localizados.
 
-        Opção 2 (Wine): Ideal para programas e jogos mais leves.
+2. **Dê permissão de execução**
+   ```bash
+   chmod +x wine67.sh
+   ```
 
-    Selecione o programa: O script vai listar todos os arquivos .exe encontrados. Digite o número correspondente ao programa que deseja abrir e pressione Enter.
+3. **Inicie o script**
+   ```bash
+   ./wine67.sh
+   ```
 
-Após o término do uso, basta fechar o programa normalmente.
+4. **Selecione o programa**
+   O script lista todos os arquivos `.exe` encontrados. Digite o número correspondente ao programa desejado e pressione Enter. A execução é feita via **WineWOW64**.
+
+5. **Feche normalmente**
+   Após o uso, basta fechar o programa como de costume.
+
+*(Obs: se escolher StartX, apenas troque o `.sh` nos comandos por `startx.sh`)*
+
+> 💡 **Dica:** se o Wine solicitar a instalação do **Wine Mono** ou **Wine Gecko** durante a execução, sempre aceite e instale — isso evita erros e melhora a compatibilidade com diversos programas.
