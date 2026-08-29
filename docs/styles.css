@@ -1,0 +1,50 @@
+body {
+    background-color: #000000;
+    font-family: "Ubuntu Mono", "Courier New", Courier, monospace;
+    color: #00ff00;
+}
+
+.download-button {
+    padding: 10px 20px;
+    background-color: #00cc00;
+    color: #ffffff;
+    text-decoration: none;
+    transition: background-color 0.3s ease;
+    display: inline-block;
+    margin-top: 20px;
+
+}
+
+p {
+    color: #00ff00;
+    text-align: left;
+}
+
+.subtitulo {
+    color: #00ff00;
+    background-color: #000000;
+    position: sticky;
+    font-size: 50px;
+    margin-top: 20px;
+    margin-bottom: 20px;
+    text-align: center;
+}
+
+div {
+    color: #00ff00;
+    text-align: center;
+    margin-top: 50px;
+}
+
+.logo {
+    display: block;
+    max-width: 300px;
+    height: auto;
+    width: auto;
+    margin: 0 auto;
+}
+
+.container {
+    text-align: center;
+    margin: 20px;
+}
