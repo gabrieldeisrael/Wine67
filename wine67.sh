@@ -1,40 +1,49 @@
 #!/bin/bash
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+set -o pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALL_DIR="$HOME/.cache/wine67"
 WINE_BIN="$INSTALL_DIR/bin/wine"
 
+# CORES
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
 CYAN='\033[0;36m'; BOLD='\033[1m'; DIM='\033[2m'; RESET='\033[0m'
 MAGENTA='\033[0;35m'
 
-erro()  { echo -e "${RED}❌ $1${RESET}"; exit 1; }
+# FUNÇÕES DE LOG
+erro()  { echo -e "${RED}❌ $1${RESET}" >&2; exit 1; }
 ok()    { echo -e "${GREEN}✔  $1${RESET}"; }
-info()  { echo -e "${CYAN}➜  $1${RESET}"; }
+info()  { echo -e "${CYAN}➜  $1${RESET}"a; }
 aviso() { echo -e "${YELLOW}⚠  $1${RESET}"; }
 
+# Limpar aspas de strings de entrada
+limpar_entrada() {
+    local entrada="$1"
+    entrada="${entrada//\'/}"
+    entrada="${entrada//\"/}"
+    entrada="${entrada# }"
+    entrada="${entrada% }"
+    echo "$entrada"
+}
+
 spinner() {
-    local pid=$1
-    local msg="${2:-Carregando...}"
+    local pid=$1 msg="${2:-Carregando...}"
     local spin='/-\|'
     local i=0
     while kill -0 "$pid" 2>/dev/null; do
-        local c="${spin:$i:1}"
-        echo -ne "\r  ${CYAN}[${c}]${RESET}  ${msg}"
+        echo -ne "\r  ${CYAN}[${spin:$i:1}]${RESET}  ${msg}"
         i=$(( (i+1) % ${#spin} ))
         sleep 0.1
     done
     echo -ne "\r  ${GREEN}[✔]${RESET}  ${msg}\n"
 }
 
-# Pegar a URL estável mais recente do Kron4ek dinamicamente
 obter_url_wine() {
     local url
-    url=$(curl -s --max-time 15 "https://api.github.com/repos/Kron4ek/Wine-Builds/releases/latest" | \
-          grep -o "https://github.com/Kron4ek/Wine-Builds/releases/download/.*/wine-.*-amd64-wow64.tar.xz" | head -n 1)
+    url=$(curl -s --max-time 15 "https://api.github.com/repos/Kron4ek/Wine-Builds/releases/latest" 2>/dev/null | \
+          grep -o "https://github.com/Kron4ek/Wine-Builds/releases/download/.*/wine-.*-amd64-wow64.tar.xz" | head -n1)
 
-    # Fallback caso a API do GitHub esteja indisponível
     if [ -z "$url" ]; then
         aviso "API do GitHub indisponível — usando versão fallback"
         url="https://github.com/Kron4ek/Wine-Builds/releases/download/11.10/wine-11.10-amd64-wow64.tar.xz"
@@ -42,31 +51,31 @@ obter_url_wine() {
     echo "$url"
 }
 
-clear
 
-echo -e "${MAGENTA}${BOLD}"
-echo "  ██╗    ██╗██╗███╗   ██╗███████╗ ██████╗ ███████╗"
-echo "  ██║    ██║██║████╗  ██║██╔════╝██╔════╝ ╚════██║"
-echo "  ██║ █╗ ██║██║██╔██╗ ██║█████╗  ███████╗     ██╔╝"
-echo "  ██║███╗██║██║██║╚██╗██║██╔══╝  ██╔═══██╗   ██╔╝ "
-echo "  ╚███╔███╔╝██║██║ ╚████║███████╗╚██████╔╝   ██║  "
-echo "   ╚══╝╚══╝ ╚═╝╚═╝  ╚═══╝╚══════╝ ╚═════╝    ╚═╝  "
-echo -e "${RESET}"
-echo -e "  ${DIM}Wine-Kron4ek wow64 Portable Launcher — sem sudo${RESET}"
-echo -e "  ${DIM}Base: $INSTALL_DIR${RESET}"
-echo ""
-
-
+# Checagens de dependências
 command -v curl &>/dev/null || erro "Instale o comando 'curl' para continuar."
 command -v tar  &>/dev/null || erro "'tar' não encontrado."
 command -v bash &>/dev/null || erro "'bash' não encontrado."
 
 # Verifica versão do bash (mapfile requer bash >= 4.0)
-if [ "${BASH_VERSINFO[0]}" -lt 4 ]; then
-    erro "Bash 4.0 ou superior necessário (versão atual: $BASH_VERSION)"
-fi
+(( BASH_VERSINFO[0] >= 4 )) || erro "Bash 4.0 ou superior necessário (versão atual: $BASH_VERSION)"
 
 mkdir -p "$INSTALL_DIR"
+
+# EXIBIR BANNER
+{
+    echo -e "${MAGENTA}${BOLD}"
+    echo "  ██╗    ██╗██╗███╗   ██╗███████╗ ██████╗ ███████╗"
+    echo "  ██║    ██║██║████╗  ██║██╔════╝██╔════╝ ╚════██║"
+    echo "  ██║ █╗ ██║██║██╔██╗ ██║█████╗  ███████╗     ██╔╝"
+    echo "  ██║███╗██║██║██║╚██╗██║██╔══╝  ██╔═══██╗   ██╔╝ "
+    echo "  ╚███╔███╔╝██║██║ ╚████║███████╗╚██████╔╝   ██║  "
+    echo "   ╚══╝╚══╝ ╚═╝╚═╝  ╚═══╝╚══════╝ ╚═════╝    ╚═╝  "
+    echo -e "${RESET}"
+    echo -e "  ${DIM}Wine-Kron4ek wow64 Portable Launcher — sem sudo${RESET}"
+    echo -e "  ${DIM}Base: $INSTALL_DIR${RESET}"
+    echo ""
+}
 
 
 # VERIFICAR ESPAÇO EM DISCO ANTES DE BAIXAR
@@ -103,14 +112,18 @@ baixar() {
 
 # BUSCAR .TAR LOCAL (pendrive, pasta do script, etc)
 buscar_tar() {
-    local resultado=""
-    # Prioriza padrão exato do Kron4ek wow64, depois genérico
-    for padrao in "wine-*-amd64-wow64.tar.xz" "wine-*.tar.xz" "wine-*.tar.gz" "wine-*.tar"; do
-        resultado=$(find "$SCRIPT_DIR" -maxdepth 3 -name "$padrao" 2>/dev/null | head -1)
-        [ -n "$resultado" ] && echo "$resultado" && return
-        resultado=$(find /media /run/media /mnt -maxdepth 5 -name "$padrao" 2>/dev/null | head -1 2>/dev/null)
-        [ -n "$resultado" ] && echo "$resultado" && return
+    local padroes=("wine-*-amd64-wow64.tar.xz" "wine-*.tar.xz" "wine-*.tar.gz" "wine-*.tar")
+    local resultado
+    
+    for padrao in "${padroes[@]}"; do
+        resultado=$(find "$SCRIPT_DIR" -maxdepth 3 -name "$padrao" -type f -print -quit 2>/dev/null)
+        [[ -n "$resultado" ]] && echo "$resultado" && return 0
+        
+        # Busca em drives/mídia com menor profundidade
+        resultado=$(find /media /run/media /mnt -maxdepth 3 -name "$padrao" -type f -print -quit 2>/dev/null)
+        [[ -n "$resultado" ]] && echo "$resultado" && return 0
     done
+    return 1
 }
 
 # INSTALAR WINE
@@ -136,10 +149,10 @@ instalar_wine() {
     esac
 
     info "Verificando integridade do arquivo..."
-    if ! tar "$TEST_FLAG" "$GE_TAR" &>/dev/null; then
+    tar "$TEST_FLAG" "$GE_TAR" &>/dev/null || {
         rm -f "$GE_TAR"
         erro "Arquivo corrompido ou incompleto. Delete '$INSTALL_DIR' e tente novamente."
-    fi
+    }
     ok "Arquivo íntegro."
 
     tar "$TAR_FLAG" "$GE_TAR" -C "$INSTALL_DIR" --strip-components=1 &
@@ -147,13 +160,13 @@ instalar_wine() {
     spinner "$tar_pid" "Extraindo Wine (pode demorar)..."
     wait "$tar_pid" || erro "Falha ao extrair. Delete '$INSTALL_DIR' e tente novamente."
 
-    find "$INSTALL_DIR/bin" -type f -exec chmod +x {} \; 2>/dev/null
+    # Otimização: usar find com -print0 e xargs para chmod eficiente
+    find "$INSTALL_DIR/bin" -type f -print0 2>/dev/null | xargs -0 chmod +x 2>/dev/null
     
-    if [ ! -f "$WINE_BIN" ]; then
-        # Tentar encontrar o wine em subpastas
+    if [[ ! -f "$WINE_BIN" ]]; then
         local found
-        found=$(find "$INSTALL_DIR" -name "wine" -type f 2>/dev/null | head -1)
-        if [ -n "$found" ]; then
+        found=$(find "$INSTALL_DIR" -name "wine" -type f -print -quit 2>/dev/null)
+        if [[ -n "$found" ]]; then
             aviso "Binário encontrado em local inesperado: $found"
             WINE_BIN="$found"
         else
@@ -167,18 +180,22 @@ instalar_wine() {
 detectar_unity() {
     local exe_dir
     exe_dir="$(dirname "$1")"
-    if find "$exe_dir" -maxdepth 2 \( -name "UnityPlayer.dll" -o -name "*_Data" -type d \) 2>/dev/null | grep -q .; then
-        return 0  # é Unity
-    fi
+    
+    # Primeiro tenta encontrar UnityPlayer.dll diretamente
+    [[ -f "$exe_dir/UnityPlayer.dll" ]] && return 0
+    
+    # Depois verifica por pastas _Data típicas do Unity
+    find "$exe_dir" -maxdepth 1 -type d -name "*_Data" -print -quit 2>/dev/null | grep -q . && return 0
+    
     return 1
 }
 
 # INSTALAÇÃO
-if [ ! -f "$WINE_BIN" ]; then
+if [[ ! -f "$WINE_BIN" ]]; then
     instalar_wine
 fi
 
-[ ! -x "$WINE_BIN" ] && chmod +x "$WINE_BIN"
+[[ ! -x "$WINE_BIN" ]] && chmod +x "$WINE_BIN"
 
 ok "Wine: $WINE_BIN"
 ok "Versão: $("$WINE_BIN" --version 2>/dev/null || echo 'desconhecida')"
@@ -215,20 +232,16 @@ echo ""
 info "Procurando jogos em $SCRIPT_DIR ..."
 
 declare -a EXES
-while IFS= read -r line; do
-    EXES+=("$line")
-done < <(find "$SCRIPT_DIR" -name "*.exe" \
-    -not -path "*/.cache/wine67/*" 2>/dev/null | sort)
+mapfile -t EXES < <(find "$SCRIPT_DIR" -name "*.exe" -not -path "*/.cache/wine67/*" -type f 2>/dev/null | sort)
 
 SELECTED=""
 
-if [ ${#EXES[@]} -eq 0 ]; then
+if (( ${#EXES[@]} == 0 )); then
     echo ""
     echo -ne "  ${YELLOW}Nenhum .exe encontrado. Digite o caminho: ${RESET}"
     read -r SELECTED
-    SELECTED="${SELECTED//\'/}"; SELECTED="${SELECTED//\"/}"
-    SELECTED="${SELECTED# }";   SELECTED="${SELECTED% }"
-    [ -f "$SELECTED" ] || erro "Arquivo não encontrado: '$SELECTED'"
+    SELECTED=$(limpar_entrada "$SELECTED")
+    [[ -f "$SELECTED" ]] || erro "Arquivo não encontrado: '$SELECTED'"
 else
     echo ""
     echo -e "  ${BOLD}Jogos encontrados:${RESET}"
@@ -243,26 +256,25 @@ else
     echo -ne "  ${CYAN}Escolha: ${RESET}"
     read -r CHOICE
 
-    if [ "$CHOICE" = "0" ]; then
+    if [[ "$CHOICE" == "0" ]]; then
         echo -ne "  Caminho: "
         read -r SELECTED
-        SELECTED="${SELECTED//\'/}"; SELECTED="${SELECTED//\"/}"
-        SELECTED="${SELECTED# }";   SELECTED="${SELECTED% }"
-    elif [[ "$CHOICE" =~ ^[0-9]+$ ]] && [ "$CHOICE" -ge 1 ] && [ "$CHOICE" -le "${#EXES[@]}" ]; then
+        SELECTED=$(limpar_entrada "$SELECTED")
+    elif [[ "$CHOICE" =~ ^[0-9]+$ ]] && (( CHOICE >= 1 && CHOICE <= ${#EXES[@]} )); then
         SELECTED="${EXES[$((CHOICE-1))]}"
     else
         erro "Opção inválida: '$CHOICE'"
     fi
 fi
 
-[ -z "$SELECTED" ] && erro "Nenhum arquivo selecionado."
-[ ! -f "$SELECTED" ] && erro "Arquivo não encontrado: '$SELECTED'"
+[[ -z "$SELECTED" ]] && erro "Nenhum arquivo selecionado."
+[[ ! -f "$SELECTED" ]] && erro "Arquivo não encontrado: '$SELECTED'"
 
 # PREFIX ISOLADO POR JOGO
 GAME_NAME="$(basename "$SELECTED" .exe | tr -cd '[:alnum:]_-')"
 export WINEPREFIX="$INSTALL_DIR/prefixes/$GAME_NAME"
 
-if [ ! -f "$WINEPREFIX/system.reg" ]; then
+if [[ ! -f "$WINEPREFIX/system.reg" ]]; then
     mkdir -p "$WINEPREFIX"
     info "Inicializando ambiente do jogo pela primeira vez..."
     WINEARCH=win64 "$WINE_BIN" wineboot -i &>/dev/null &
@@ -276,29 +288,30 @@ EXTRA_FLAGS=""
 if detectar_unity "$SELECTED"; then
     aviso "Jogo Unity detectado — aplicando flags de compatibilidade D3D11"
     EXTRA_FLAGS="-force-d3d11 -nolog"
-    # Nota: -batchmode removido pois desativa a janela do jogo
 fi
 
 # Configura áudio via PipeWire/PulseAudio
 PULSE_SOCKET=$(pactl info 2>/dev/null | grep 'Server String' | awk '{print $3}')
-if [ -n "$PULSE_SOCKET" ]; then
+if [[ -n "$PULSE_SOCKET" ]]; then
     export PULSE_SERVER="unix:$PULSE_SOCKET"
 fi
 
 echo ""
-echo -e "  ${GREEN}╔══════════════════════════════════════════════════╗${RESET}"
-echo -e "  ${GREEN}║  🎮  $(basename "$SELECTED")${RESET}"
-[ -n "$EXTRA_FLAGS" ] && \
-echo -e "  ${GREEN}║  🔧  Flags: $EXTRA_FLAGS${RESET}"
-echo -e "  ${GREEN}║  📁  Prefix: $GAME_NAME${RESET}"
-echo -e "  ${GREEN}╚══════════════════════════════════════════════════╝${RESET}"
+{
+    echo -e "  ${GREEN}╔══════════════════════════════════════════════════╗${RESET}"
+    echo -e "  ${GREEN}║  🎮  $(basename "$SELECTED")${RESET}"
+    [[ -n "$EXTRA_FLAGS" ]] && echo -e "  ${GREEN}║  🔧  Flags: $EXTRA_FLAGS${RESET}"
+    echo -e "  ${GREEN}║  📁  Prefix: $GAME_NAME${RESET}"
+    echo -e "  ${GREEN}╚══════════════════════════════════════════════════╝${RESET}"
+}
 echo ""
 
-# EXECUTAR
+# EXECUTAR - Usar array para argumentos seguros
+declare -a wine_args=("$SELECTED")
+[[ -n "$EXTRA_FLAGS" ]] && wine_args+=($EXTRA_FLAGS)
 
-# shellcheck disable=SC2086
-WINEARCH=win64 "$WINE_BIN" "$SELECTED" $EXTRA_FLAGS
+WINEARCH=win64 "$WINE_BIN" "${wine_args[@]}"
 
 EXIT=$?
 echo ""
-[ $EXIT -eq 0 ] && ok "Encerrado normalmente." || aviso "Código de saída: $EXIT"
+(( EXIT == 0 )) && ok "Encerrado normalmente." || aviso "Código de saída: $EXIT"
