@@ -42,5 +42,5 @@
 *(Obs: se escolher StartX, apenas troque o `.sh` nos comandos por `startx.sh`)*
 
 > 💡 **Dica:** se o Wine solicitar a instalação do **Wine Mono** ou **Wine Gecko** durante a execução, sempre aceite e instale — isso evita erros e melhora a compatibilidade com diversos programas.
-e isso ai h
+É isso aí 
 
