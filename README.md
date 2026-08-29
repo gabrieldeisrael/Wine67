@@ -5,20 +5,20 @@
 > ⚠️ **Recomendado: use o `wine67.sh`**
 > O projeto conta com mais de uma versão do script, mas o **`wine67.sh` é o mais estável** e o recomendado para uso no dia a dia. Prefira sempre essa versão ao rodar o projeto.
 
-## ✨ Funcionalidades
+## Funcionalidades
 
 - Roda executáveis `.exe` via **WineWOW64**
 - Não requer instalação nem permissões administrativas no computador host
 - Detecta automaticamente os arquivos `.exe` disponíveis no pendrive
 - Menu simples de seleção por número
 
-## 📋 Pré-requisitos
+## Pré-requisitos
 
 - Pendrive formatado em **ExFAT**
 - Linux com WineWOW64 já disponível no sistema
 - Permissão de execução para o script (veja abaixo)
 
-## 🚀 Como usar
+## Como usar
 
 1. **Acesse o diretório**
    Abra o terminal na pasta onde os arquivos do StartX/Wine67 estão localizados.
