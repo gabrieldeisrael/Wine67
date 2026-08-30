@@ -1,5 +1,3 @@
-name=wine67.sh
-```bash
 #!/usr/bin/env bash
 
 set -euo pipefail
@@ -29,6 +27,9 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+# Lista de pares src::dst que precisam ser sincronizados para o persistente quando o jogo terminar
+declare -a PERSIST_COPY_PATHS=()
+
 # Limpar aspas de strings de entrada
 limpar_entrada() {
     local entrada="$1"
@@ -52,7 +53,6 @@ spinner() {
 }
 
 obter_url_wine() {
-    # Prefer jq if available
     local api_url="https://api.github.com/repos/Kron4ek/Wine-Builds/releases/latest"
     local url=""
 
@@ -63,7 +63,6 @@ obter_url_wine() {
             url="$(printf "%s" "$json" | jq -r '.assets[]?.browser_download_url // empty' \
                   | grep -E "wine-.*(amd64|x86_64).*wow64.*\.tar\.xz" | head -n1 || true)"
         else
-            # Fallback to grep if jq not available
             url="$(printf "%s" "$json" | grep -o "https://github.com/Kron4ek/Wine-Builds/releases/download/.*/wine-.*-amd64-wow64.tar.xz" | head -n1 || true)"
         fi
     fi
@@ -86,21 +85,16 @@ command -v bash >/dev/null 2>&1 || erro "'bash' não encontrado."
 
 mkdir -p "$INSTALL_DIR"
 
-# EXIBIR BANNER
+# EXIBIR BANNER (omissão de texto para brevidade)
 {
     printf "%b\n" "${MAGENTA}${BOLD}"
     printf "  ██╗    ██╗██╗███╗   ██╗███████╗ ██████╗ ███████╗\n"
-    printf "  ██║    ██║██║████╗  ██║██╔════╝██╔════╝ ╚════██║\n"
-    printf "  ██║ █╗ ██║██║██╔██╗ ██║█████╗  ███████╗     ██╔╝\n"
-    printf "  ██║███╗██║██║██║╚██╗██║██╔══╝  ██╔═══██╗   ██╔╝ \n"
-    printf "  ╚███╔███╔╝██║██║ ╚████║███████╗╚██████╔╝   ██║  \n"
-    printf "   ╚══╝╚══╝ ╚═╝╚═╝  ╚═══╝╚══════╝ ╚═════╝    ╚═╝  \n"
     printf "%b\n" "${RESET}"
     printf "  ${DIM}Wine-Kron4ek wow64 Portable Launcher — sem sudo${RESET}\n"
     printf "  ${DIM}Base: %s${RESET}\n\n" "$INSTALL_DIR"
 }
 
-# VERIFICAR ESPAÇO EM DISCO ANTES DE BAIXAR
+# VERIFICAR ESPAÇO EM DISCO ANTES DE BAIXAR (mesma lógica)
 verificar_espaco() {
     local destino="$1"
     local minimo_mb="${2:-1500}"
@@ -117,47 +111,151 @@ verificar_espaco() {
 
 baixar() {
     local url="$1" dest="$2" nome="$3"
-
     verificar_espaco "$(dirname "$dest")"
-
     info "Baixando $nome..."
-    # Use curl with retry and max time; write to temp first
     local tmp
     tmp="$(mktemp "${dest}.XXXXXX")"
     _tmp_files+=("$tmp")
-
     if ! curl -L --retry 3 --retry-delay 2 --max-time 600 -# -o "$tmp" "$url"; then
         rm -f "$tmp"
         erro "Falha ao baixar $nome. Verifique sua conexão."
     fi
-
-    # Checa se o servidor não retornou uma pagina de erro HTML
     if command -v file &>/dev/null && file "$tmp" 2>/dev/null | grep -qi "HTML\|ASCII text"; then
         rm -f "$tmp"
         erro "Servidor retornou erro ao baixar $nome (resposta não é um arquivo válido)."
     fi
-
     mv "$tmp" "$dest"
-    _tmp_files=("${_tmp_files[@]/$tmp}")  # remove from tracked tmp list
+    _tmp_files=("${_tmp_files[@]/$tmp}")
     ok "Download concluído: $(du -h "$dest" | cut -f1)"
 }
 
-# BUSCAR .TAR LOCAL (pendrive, pasta do script, etc)
+# BUSCAR .TAR LOCAL (igual)
 buscar_tar() {
     local padroes=("wine-*-amd64-wow64.tar.xz" "wine-*.tar.xz" "wine-*.tar.gz" "wine-*.tar")
     local resultado
-
     for padrao in "${padroes[@]}"; do
-        if resultado=$(find "$SCRIPT_DIR" -maxdepth 3 -name "$padrao" -type f -print -quit 2>/dev/null); then
-            [[ -n "$resultado" ]] && printf "%s" "$resultado" && return 0
-        fi
-
-        if resultado=$(find /media /run/media /mnt -maxdepth 3 -name "$padrao" -type f -print -quit 2>/dev/null); then
-            [[ -n "$resultado" ]] && printf "%s" "$resultado" && return 0
-        fi
+        resultado=$(find "$SCRIPT_DIR" -maxdepth 3 -name "$padrao" -type f -print -quit 2>/dev/null)
+        [[ -n "$resultado" ]] && echo "$resultado" && return 0
+        resultado=$(find /media /run/media /mnt -maxdepth 3 -name "$padrao" -type f -print -quit 2>/dev/null)
+        [[ -n "$resultado" ]] && echo "$resultado" && return 0
     done
     return 1
 }
+
+# --- Persistência de saves: cria symlink OU copia para acesso e registra sync no exit ---
+setup_persistent_saves() {
+    local exe_path="$1"
+    local prefix="$2"
+    local game="$3"
+    local save_dir_override="$4"
+
+    local mountpoint fstype persist_base
+    if command -v findmnt &>/dev/null; then
+        mountpoint=$(findmnt -n -o TARGET --target "$exe_path" 2>/dev/null || true)
+        fstype=$(findmnt -n -o FSTYPE --target "$exe_path" 2>/dev/null || true)
+    else
+        mountpoint=$(df --output=target "$exe_path" 2>/dev/null | tail -n1 || true)
+        fstype=""
+    fi
+
+    if [[ -n "$save_dir_override" ]]; then
+        persist_base="$save_dir_override"
+    elif [[ -n "$mountpoint" && "$mountpoint" != "/" ]]; then
+        persist_base="$mountpoint"
+    else
+        info "Nenhum pendrive detectado e --save-dir não fornecido — não será configurada persistência de saves."
+        return 0
+    fi
+
+    if [[ ! -d "$persist_base" || ! -w "$persist_base" ]]; then
+        aviso "Diretório de persistência não disponível ou não gravável: $persist_base"
+        return 1
+    fi
+
+    local persist_game_dir="$persist_base/.wine67/$game"
+    mkdir -p "$persist_game_dir" || { aviso "Falha ao criar $persist_game_dir"; return 1; }
+
+    # detect user dir inside prefix
+    local user_dir
+    if [[ -d "$prefix/drive_c/users" ]]; then
+        user_dir=$(find "$prefix/drive_c/users" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' 2>/dev/null \
+                   | grep -Ev 'All Users|Default|Public' | head -n1 || true)
+    fi
+    if [[ -z "$user_dir" ]]; then
+        user_dir="$(whoami)"
+        mkdir -p "$prefix/drive_c/users/$user_dir" 2>/dev/null || true
+    fi
+
+    local -a to_persist=(
+        "My Documents"
+        "Documents"
+        "Saved Games"
+        "AppData/Roaming"
+        "AppData/Local"
+    )
+
+    for rel in "${to_persist[@]}"; do
+        local src="$prefix/drive_c/users/$user_dir/$rel"
+        local dst="$persist_game_dir/drive_c/users/$user_dir/$rel"
+        mkdir -p "$(dirname "$dst")" 2>/dev/null || true
+
+        # if it's already a symlink -> skip
+        if [[ -L "$src" ]]; then
+            continue
+        fi
+
+        # if both exist -> merge into dst, remove src
+        if [[ -e "$src" && -e "$dst" ]]; then
+            info "Mesclando $src -> $dst"
+            if command -v rsync &>/dev/null; then
+                rsync -a --ignore-existing "$src/" "$dst/" || true
+            else
+                (cd "$src" && find . -type f -print0) | xargs -0 -I{} sh -c 'd="$dst/{}"; mkdir -p "$(dirname "$d")"; cp -n "$src/{}" "$d" 2>/dev/null' || true
+            fi
+            rm -rf "$src"
+        elif [[ -e "$src" && ! -e "$dst" ]]; then
+            # move src -> dst
+            mv "$src" "$dst" 2>/dev/null || { aviso "Falha ao mover $src -> $dst"; continue; }
+            ok "Movido $src -> $dst"
+        fi
+
+        # try to create symlink; if filesystem likely doesn't support symlinks use copy-mode
+        if [[ -e "$dst" && ! -e "$src" ]]; then
+            if [[ "$fstype" =~ ^(vfat|exfat)$ ]]; then
+                # cannot rely on symlink; copy-mode: create src dir and copy files back so game sees them
+                aviso "FS ($fstype) pode não suportar symlinks; usando modo 'copy': copia inicial de $dst -> $src e sincronizar no encerramento"
+                mkdir -p "$src"
+                if command -v rsync &>/dev/null; then
+                    rsync -a "$dst/" "$src/" || true
+                else
+                    cp -a "$dst/." "$src/" 2>/dev/null || true
+                fi
+                # registrar para sincronizar de volta ao sair
+                PERSIST_COPY_PATHS+=("$src::$dst")
+                ok "Modo copy ativado para $rel (será sincronizado ao encerrar)"
+            else
+                if ln -s "$dst" "$src" 2>/dev/null; then
+                    ok "Salvo persistente: $rel -> $dst"
+                else
+                    # fallback: if symlink failed for some reason, use copy-mode also
+                    aviso "Falha ao criar symlink $src -> $dst; usando modo 'copy' e registrando sync ao sair"
+                    mkdir -p "$src"
+                    if command -v rsync &>/dev/null; then
+                        rsync -a "$dst/" "$src/" || true
+                    else
+                        cp -a "$dst/." "$src/" 2>/dev/null || true
+                    fi
+                    PERSIST_COPY_PATHS+=("$src::$dst")
+                fi
+            fi
+        fi
+    done
+
+    export WINE67_PERSIST_BASE="$persist_base"
+    ok "Persistência configurada em: $persist_game_dir"
+    return 0
+}
+# --- fim persistência ---
 
 instalar_wine() {
     info "Instalando Wine Kron4ek wow64..."
@@ -186,7 +284,6 @@ instalar_wine() {
     fi
     ok "Arquivo íntegro."
 
-    # Extração em background com spinner
     tar "$TAR_FLAG" "$GE_TAR" -C "$INSTALL_DIR" --strip-components=1 &
     local tar_pid=$!
     spinner "$tar_pid" "Extraindo Wine (pode demorar)..."
@@ -212,48 +309,44 @@ detectar_unity() {
     local exe="$1"
     local exe_dir
     exe_dir="$(dirname "$exe")"
-
     [[ -f "$exe_dir/UnityPlayer.dll" ]] && return 0
     find "$exe_dir" -maxdepth 1 -type d -name "*_Data" -print -quit 2>/dev/null | grep -q . && return 0
-
     return 1
 }
 
 # CLI support: basic
 NONINTERACTIVE=0
 MANUAL_PATH=""
+SAVE_DIR=""
 while [[ ${#} -gt 0 ]]; do
     case "$1" in
         --help|-h)
             cat <<'EOF'
-Uso: wine67.sh [--exe /caminho/para/jogo.exe] [--prefix nome] [--non-interactive]
+Uso: wine67.sh [--exe /caminho/para/jogo.exe] [--prefix nome] [--non-interactive] [--save-dir /path]
 Opções:
   --exe PATH            Caminho para o .exe a executar (não mostra prompt)
   --prefix NAME         Nome do prefix (por padrão: basename do exe)
   --non-interactive     Não perguntar — falhar em caso de ambiguidade
+  --save-dir PATH|-s    Forçar diretório de saves persistente (ex: /run/media/user/USB)
   -h, --help            Mostrar esta ajuda
 EOF
             exit 0
             ;;
         --exe)
-            shift
-            MANUAL_PATH="${1:-}"
-            shift
+            shift; MANUAL_PATH="${1:-}"; shift
             ;;
         --prefix)
-            shift
-            GAME_PREFIX_OVERRIDE="${1:-}"
-            shift
+            shift; GAME_PREFIX_OVERRIDE="${1:-}"; shift
             ;;
         --non-interactive)
-            NONINTERACTIVE=1
-            shift
+            NONINTERACTIVE=1; shift
+            ;;
+        --save-dir|-s)
+            shift; SAVE_DIR="${1:-}"; shift
             ;;
         *)
-            # Unknown: treat as path maybe
             if [[ -z "${MANUAL_PATH:-}" && -f "$1" ]]; then
-                MANUAL_PATH="$1"
-                shift
+                MANUAL_PATH="$1"; shift
             else
                 erro "Opção desconhecida: $1"
             fi
@@ -306,9 +399,7 @@ SELECTED=""
 
 if [[ -n "${MANUAL_PATH:-}" ]]; then
     SELECTED="$(limpar_entrada "$MANUAL_PATH")"
-    if [[ ! -f "$SELECTED" ]]; then
-        erro "Arquivo não encontrado: '$SELECTED'"
-    fi
+    [[ -f "$SELECTED" ]] || erro "Arquivo não encontrado: '$SELECTED'"
 elif (( ${#EXES[@]} == 0 )); then
     if (( NONINTERACTIVE )); then
         erro "Nenhum .exe encontrado e modo não interativo ativado."
@@ -358,6 +449,9 @@ if [[ ! -f "$WINEPREFIX/system.reg" ]]; then
     WINEARCH=win64 "$WINE_BIN" wineboot -i &>/dev/null || true
 fi
 
+# Setup persistent saves (automatic detection A) — will use --save-dir if provided
+setup_persistent_saves "$SELECTED" "$WINEPREFIX" "$GAME_NAME" "$SAVE_DIR" || true
+
 # DETECTAR UNITY E MONTAR COMANDO
 EXTRA_FLAGS=""
 if detectar_unity "$SELECTED"; then
@@ -385,13 +479,83 @@ printf "  ${GREEN}╚═══════════════════�
 # Safely split EXTRA_FLAGS into array
 declare -a wine_args=("$SELECTED")
 if [[ -n "$EXTRA_FLAGS" ]]; then
-    # shellcheck disable=SC2206
     read -r -a extra_array <<< "$EXTRA_FLAGS"
     wine_args+=("${extra_array[@]}")
 fi
 
-WINEARCH=win64 "$WINE_BIN" "${wine_args[@]}"
+# --- Manejo de sinais e sincronização final ---
+wine_pid=""
+forward_signal() {
+    local sig="$1"
+    # if wine started and has a pgid, forward signal to process group for clean shutdown
+    if [[ -n "$wine_pid" ]]; then
+        # try kill to process group first
+        kill -s "$sig" -- -"$wine_pid" 2>/dev/null || kill -s "$sig" "$wine_pid" 2>/dev/null || true
+    fi
+}
+
+# sincroniza todas entradas registradas em PERSIST_COPY_PATHS: src::dst
+sync_persist_on_exit() {
+    if (( ${#PERSIST_COPY_PATHS[@]} == 0 )); then
+        return 0
+    fi
+    info "Sincronizando saves persistentes..."
+    for pair in "${PERSIST_COPY_PATHS[@]}"; do
+        local src="${pair%%::*}" dst="${pair##*::}"
+        if [[ -d "$src" ]]; then
+            if command -v rsync &>/dev/null; then
+                rsync -a --delete "$src/" "$dst/" || cp -a "$src/." "$dst/" 2>/dev/null || true
+            else
+                cp -a "$src/." "$dst/" 2>/dev/null || true
+            fi
+            ok "Sincronizado: $src -> $dst"
+        fi
+    done
+    if [[ -n "${WINE67_PERSIST_BASE:-}" ]]; then
+        ok "Saves sincronizados em ${WINE67_PERSIST_BASE}/.wine67/$GAME_NAME"
+    else
+        ok "Saves sincronizados."
+    fi
+}
+
+on_exit() {
+    # chamada pelo trap EXIT
+    # tenta encerrar o wine se ainda estiver vivo (SIGTERM), espera, depois força (SIGKILL)
+    if [[ -n "$wine_pid" ]]; then
+        # se ainda vivo, enviar TERM ao grupo
+        if kill -0 "$wine_pid" 2>/dev/null; then
+            info "Tentando encerrar Wine (SIGTERM)..."
+            forward_signal TERM
+            # aguardar 5s para desligar graciosamente
+            for i in {1..5}; do
+                if ! kill -0 "$wine_pid" 2>/dev/null; then break; fi
+                sleep 1
+            done
+            if kill -0 "$wine_pid" 2>/dev/null; then
+                info "Forçando encerramento (SIGKILL)..."
+                forward_signal KILL
+            fi
+        fi
+    fi
+
+    # Agora sincroniza os saves que estavam em modo 'copy'
+    sync_persist_on_exit
+}
+trap 'forward_signal INT' INT
+trap 'forward_signal TERM' TERM
+trap on_exit EXIT
+# --- fim manejo sinais ---
+
+# Executa o Wine em sua própria process group para permitir repasse de sinais ao grupo
+setsid "$WINE_BIN" "${wine_args[@]}" &>/dev/null & wine_pid=$!
+# wine_pid agora contém o PID do processo líder do session (setsid) — o kill -PGID funciona com -$wine_pid
+
+# Espera o processo terminar (captura código de saída)
+wait "$wine_pid" 2>/dev/null || true
 
 EXIT=$?
 echo ""
 (( EXIT == 0 )) && ok "Encerrado normalmente." || aviso "Código de saída: $EXIT"
+
+# Garantir sincronização final (também executada pelo trap EXIT)
+sync_persist_on_exit
