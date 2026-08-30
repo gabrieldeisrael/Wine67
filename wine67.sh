@@ -1,5 +1,3 @@
-name=wine67.sh
-```bash
 #!/usr/bin/env bash
 
 set -euo pipefail
