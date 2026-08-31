@@ -25,8 +25,8 @@ p {
     background-color: #000000;
     position: sticky;
     font-size: 50px;
-    margin-top: 20px;
-    margin-bottom: 20px;
+    margin-top: 1px;
+    margin-bottom: 1px;
     text-align: center;
 }
 
@@ -41,12 +41,6 @@ div {
     max-width: 300px;
     height: auto;
     width: auto;
-    margin: 0 auto;
-}
-
-.container {
-    text-align: center;
-    margin: 20px;
 }
 
 .recommendation {
@@ -60,4 +54,16 @@ pre {
     color: #14eca4;
     padding: 10px;
     font-size: 1.2rem;
+}
+
+header {
+    text-align: center;
+    margin-top: 20px;
+}
+
+.comeco {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
 }

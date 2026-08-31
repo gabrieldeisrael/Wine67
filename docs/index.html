@@ -15,8 +15,27 @@
     <p>O Wine67 é um script de shell portável para rodar jogos de Windows no Linux. Ele não precisa de instalação e pode ser executado diretamente de um pendrive ou de qualquer outro dispositivo de armazenamento portável. Ele foi projetado para ser fácil de usar, mesmo para quem não tem familiaridade com o Linux ou com interfaces de linha de comando.</p>
     <div class="container">
         <img src="wine67.png" alt="Wine67 Logo" class="logo">
-        <a href="https://github.com/gabrieldeisrael/Wine67/releases/download/v1.2/wine67.sh" class="download-button">Download Wine67</a>
+        <button class="download-button" onclick="downloadAndRedirect('https://github.com/gabrieldeisrael/Wine67/releases/download/v1.2/wine67.sh')">Download Wine67</button>
+        <p class="recommendation">Ou pode escolher o .sh já com CS 1.6 incluído (Recomendado para quem quer começar a jogar imediatamente). Download abaixo:</p>
+        <button class="download-button" onclick="downloadAndRedirect('https://github.com/gabrieldeisrael/Wine67/releases/download/v1.2/cswine67.sh')">Download Wine67 com CS 1.6</button>
     </div>
+
+    <script>
+        function downloadAndRedirect(downloadUrl) {
+            // Inicia o download
+            const link = document.createElement('a');
+            link.href = downloadUrl;
+            link.download = '';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            // Redireciona para index2.html após 1 segundo
+            setTimeout(() => {
+                window.location.href = 'index2.html';
+            }, 1000);
+        }
+    </script>
     <p>O Wine67 é um projeto de código aberto, e seu código-fonte está disponível no GitHub. Você pode contribuir para o projeto relatando problemas, sugerindo recursos ou enviando pull requests. Suas contribuições são muito bem-vindas.</p>
     <p>Para mais informações sobre o Wine67, consulte o arquivo readme no repositório do GitHub. Você também pode encontrar documentação e tutoriais sobre como usar o Wine67 de forma eficaz.</p>
     <p>Aqui está o link para o repositório no GitHub: <a href="https://github.com/gabrieldeisrael/Wine67">Wine67 no GitHub</a></p>
