@@ -88,7 +88,16 @@ mkdir -p "$INSTALL_DIR"
 # EXIBIR BANNER (omissão de texto para brevidade)
 {
     printf "%b\n" "${MAGENTA}${BOLD}"
-    printf "  ██╗    ██╗██╗███╗   ██╗███████╗ ██████╗ ███████╗\n"
+    echo "  ██╗    ██╗██╗███╗   ██╗███████╗ ██████╗ ███████╗"
+    echo "  ██║    ██║██║████╗  ██║██╔════╝██╔════╝ ╚════██║"
+    echo "  ██║ █╗ ██║██║██╔██╗ ██║█████╗  ███████╗     ██╔╝"
+    echo "  ██║███╗██║██║██║╚██╗██║██╔══╝  ██╔═══██╗   ██╔╝ "
+    echo "  ╚███╔███╔╝██║██║ ╚████║███████╗╚██████╔╝   ██║  "
+    echo "   ╚══╝╚══╝ ╚═╝╚═╝  ╚═══╝╚══════╝ ╚═════╝    ╚═╝  "
+    printf "%b\n" "${RESET}"
+    printf "  ${DIM}Wine-Kron4ek wow64 Portable Launcher — sem sudo${RESET}\n"
+    printf "  ${DIM}Base: %s${RESET}\n\n" "$INSTALL_DIR"
+}
     printf "%b\n" "${RESET}"
     printf "  ${DIM}Wine-Kron4ek wow64 Portable Launcher — sem sudo${RESET}\n"
     printf "  ${DIM}Base: %s${RESET}\n\n" "$INSTALL_DIR"
