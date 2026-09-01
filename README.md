@@ -23,20 +23,15 @@
 1. **Acesse o diretório**
    Abra o terminal na pasta onde os arquivos do StartX/Wine67 estão localizados.
 
-2. **Dê permissão de execução**
+2. **Dê permissão de execução e inicie o script**
    ```bash
-   chmod +x wine67.sh
+   chmod +x wine67.sh && ./wine67.sh
    ```
 
-3. **Inicie o script**
-   ```bash
-   ./wine67.sh
-   ```
-
-4. **Selecione o programa**
+3. **Selecione o programa**
    O script lista todos os arquivos `.exe` encontrados. Digite o número correspondente ao programa desejado e pressione Enter. A execução é feita via **WineWOW64**.
 
-5. **Feche normalmente**
+4. **Feche normalmente**
    Após o uso, basta fechar o programa como de costume.
 
 *(Obs: se escolher StartX, apenas troque o `.sh` nos comandos por `startx.sh`)*
