@@ -19,10 +19,8 @@
         <p class="recommendation">Ou pode escolher o .sh já com CS 1.6 incluído (Recomendado para quem quer começar a jogar imediatamente). Download abaixo:</p>
         <button class="download-button" onclick="downloadAndRedirect('https://github.com/gabrieldeisrael/Wine67/releases/download/v1.2/cswine67.sh')">Download Wine67 com CS 1.6</button>
     </div>
-
     <script>
         function downloadAndRedirect(downloadUrl) {
-            // Inicia o download
             const link = document.createElement('a');
             link.href = downloadUrl;
             link.download = '';
@@ -30,7 +28,6 @@
             link.click();
             document.body.removeChild(link);
             
-            // Redireciona para index2.html após 1 segundo
             setTimeout(() => {
                 window.location.href = 'index2.html';
             }, 1000);
