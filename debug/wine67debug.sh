@@ -9,9 +9,9 @@
 #   - resumo de ambiente (variáveis WINE*, PATH, etc) impresso antes de rodar o jogo
 #   - flag --dry-run: faz tudo (baixa, extrai, prepara prefix) mas NÃO executa o .exe
 #
-#   ./wine67-debug.sh                # debug normal
-#   DEBUG_TRACE=1 ./wine67-debug.sh  # + bash -x completo
-#   ./wine67-debug.sh --dry-run      # não executa o jogo no final
+#   ./wine67debug.sh                # debug normal
+#   DEBUG_TRACE=1 ./wine67debug.sh  # + bash -x completo
+#   ./wine67debug.sh --dry-run      # não executa o jogo no final
 
 set -o pipefail
 set -E   # trap ERR é herdado por funções/subshells
