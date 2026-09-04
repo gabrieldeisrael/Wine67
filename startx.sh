@@ -120,9 +120,80 @@ install_wine() {
   log "na primeira vez que você rodar um programa."
 }
 
+# find_exes estendido: procura no diretório pedido e em pendrives/HDDs externos montados
 find_exes() {
   local dir="${1:-.}"
-  find "$dir" -maxdepth 3 -type f -iname '*.exe' -not -path '*/portable-wine/*' 2>/dev/null | sort
+  local mounts=()
+  local mp
+
+  # sempre procurar na pasta pedida primeiro
+  mounts+=("$dir")
+
+  # pontos comuns onde dispositivos removíveis são montados
+  # /run/media/$USER (Linux desktop), /media (Linux), /mnt (Linux), /Volumes (macOS)
+  for base in "/run/media/${USER:-$(whoami)}" "/media" "/mnt" "/Volumes"; do
+    if [ -d "$base" ]; then
+      for mp in "$base"/*; do
+        [ -d "$mp" ] && mounts+=("$mp")
+      done
+    fi
+  done
+
+  # se lsblk estiver disponível, use-o para encontrar mountpoints de dispositivos removíveis
+  if have lsblk; then
+    # formato: RM MOUNTPOINT (RM==1 significa removível)
+    while IFS= read -r line; do
+      # linha pode ser: "1 /run/media/user/USB" ou "/run/media/user/USB" dependendo da versão
+      # extraí apenas o mountpoint final
+      mp="$(printf '%s' "$line" | awk '{ for(i=2;i<=NF;i++){ printf "%s%s", $i, (i==NF?ORS:OFS)} }' )"
+      [ -n "$mp" ] && mounts+=("$mp")
+    done < <(lsblk -rpo 'RM,MOUNTPOINT' 2>/dev/null | awk '$1==1 && $2!="" { $1=""; sub(/^ /,""); print }' || true)
+  else
+    # fallback: inspeciona /proc/mounts procurando dispositivos em /dev/sd*
+    if [ -r /proc/mounts ]; then
+      while IFS= read -r line; do
+        case "$line" in
+          /dev/sd*|/dev/mmcblk*)
+            mp="$(printf '%s' "$line" | awk '{print $2}')"
+            [ -n "$mp" ] && mounts+=("$mp")
+            ;;
+        esac
+      done < /proc/mounts
+    fi
+  fi
+
+  # normaliza e remove duplicatas / ignora o BASE_DIR para não vasculhar o portable-wine
+  local uniq=() found
+  for mp in "${mounts[@]}"; do
+    [ -z "$mp" ] && continue
+    # resolve simbólicos e remove sufixo
+    if [ -d "$mp" ]; then
+      mp="$(cd -- "$mp" 2>/dev/null && pwd || echo "$mp")"
+    fi
+    case "$mp" in
+      "$BASE_DIR"*) continue ;; # não descer na pasta do wine portátil
+    esac
+    found=false
+    for u in "${uniq[@]}"; do
+      [ "$u" = "$mp" ] && found=true
+    done
+    $found || uniq+=("$mp")
+  done
+
+  # agora busca .exe em cada ponto, com limite de profundidade para não demorar demais
+  local res=() file
+  for mp in "${uniq[@]}"; do
+    [ -d "$mp" ] || continue
+    # -maxdepth 5: profundidade limitada; ajustável se precisar vasculhar subpastas muito profundas
+    while IFS= read -r file; do
+      [ -n "$file" ] && res+=("$file")
+    done < <(find "$mp" -maxdepth 5 -type f -iname '*.exe' -not -path "*/portable-wine/*" 2>/dev/null || true)
+  done
+
+  # imprime resultados únicos e ordenados
+  if [ "${#res[@]}" -gt 0 ]; then
+    printf '%s\n' "${res[@]}" | sort -u
+  fi
 }
 
 run_exe() {
