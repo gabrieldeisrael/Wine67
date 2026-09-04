@@ -14,9 +14,9 @@
 
 ## Pré-requisitos
 
-- Pendrive formatado em **ExFAT**
-- Linux com WineWOW64 já disponível no sistema
 - Permissão de execução para o script (veja abaixo)
+- Bash 4.0 ou superior
+- Tar e Curl
 
 ## Como usar
 
