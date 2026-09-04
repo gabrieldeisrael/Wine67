@@ -5,6 +5,8 @@
 > ⚠️ **Recomendado: use o `wine67.sh`**
 > O projeto conta com mais de uma versão do script, mas o **`wine67.sh` é o mais estável** e o recomendado para uso no dia a dia. Prefira sempre essa versão ao rodar o projeto.
 
+> 🧪 O `startx.sh` é uma versão experimental e pode ter comportamento, opções e estrutura de instalação diferentes. Use-o apenas para testes.
+
 ## Funcionalidades
 
 - Roda executáveis `.exe` via **WineWOW64**
@@ -34,7 +36,7 @@
 4. **Feche normalmente**
    Após o uso, basta fechar o programa como de costume.
 
-*(Obs: se escolher StartX, apenas troque o `.sh` nos comandos por `startx.sh`)*
+*(Obs: se quiser testar a versão experimental StartX, troque o `.sh` nos comandos por `startx.sh`.)*
 
 > 💡 **Dica:** se o Wine solicitar a instalação do **Wine Mono** ou **Wine Gecko** durante a execução, sempre aceite e instale — isso evita erros e melhora a compatibilidade com diversos programas.
 É isso aí 
