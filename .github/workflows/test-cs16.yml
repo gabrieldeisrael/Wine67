@@ -15,16 +15,18 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y wine xvfb imagemagick x11-apps
 
-      - name: Baixar o CS 1.6 Portable
+      - name: Baixar o CS 1.6 Portable na mesma pasta do wine67.sh
         run: |
           wget -O cs16.exe "https://baixesoft.com/servidor_download/Counter-Strike_1.6_Portable.exe"
 
-      - name: Rodar com display virtual (self-extractor + jogo)
+      - name: Rodar wine67.sh com display virtual
         run: |
           Xvfb :99 -screen 0 1024x768x24 &
           export DISPLAY=:99
           sleep 2
-          wine cs16.exe -novid -nosound &
+          chmod +x wine67.sh
+          # modo direto: pula o prompt interativo, pega o .exe da pasta
+          ./wine67.sh *.exe &
           echo $! > game.pid
           sleep 15
 
