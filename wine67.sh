@@ -226,44 +226,50 @@ export WINEDLLOVERRIDES="uiautomationcore=d;oleacc=d;tabtip.exe=d;winemenubuilde
 export NO_AT_BRIDGE=1
 export QT_ACCESSIBILITY=0
 
-
 # BUSCAR JOGOS (.EXE)
 echo ""
-info "Procurando jogos em $SCRIPT_DIR ..."
 
 declare -a EXES
-mapfile -t EXES < <(find "$SCRIPT_DIR" -name "*.exe" -not -path "*/.cache/wine67/*" -type f 2>/dev/null | sort)
-
 SELECTED=""
 
-if (( ${#EXES[@]} == 0 )); then
-    echo ""
-    echo -ne "  ${YELLOW}Nenhum .exe encontrado. Digite o caminho: ${RESET}"
-    read -r SELECTED
-    SELECTED=$(limpar_entrada "$SELECTED")
+# MODO DIRETO: se um caminho de .exe foi passado como argumento, pula a busca/prompt
+if [[ -n "$1" ]]; then
+    SELECTED="$(limpar_entrada "$1")"
     [[ -f "$SELECTED" ]] || erro "Arquivo não encontrado: '$SELECTED'"
+    ok "Modo direto: $(basename "$SELECTED")"
 else
-    echo ""
-    echo -e "  ${BOLD}Jogos encontrados:${RESET}"
-    echo ""
-    for i in "${!EXES[@]}"; do
-        echo -e "  ${YELLOW}[$((i+1))]${RESET}  ${BOLD}$(basename "${EXES[$i]}")${RESET}"
-        echo -e "        ${DIM}${EXES[$i]}${RESET}"
-    done
-    echo ""
-    echo -e "  ${CYAN}[0]${RESET}  Digitar caminho manualmente"
-    echo ""
-    echo -ne "  ${CYAN}Escolha: ${RESET}"
-    read -r CHOICE
+    info "Procurando jogos em $SCRIPT_DIR ..."
+    mapfile -t EXES < <(find "$SCRIPT_DIR" -name "*.exe" -not -path "*/.cache/wine67/*" -type f 2>/dev/null | sort)
 
-    if [[ "$CHOICE" == "0" ]]; then
-        echo -ne "  Caminho: "
+    if (( ${#EXES[@]} == 0 )); then
+        echo ""
+        echo -ne "  ${YELLOW}Nenhum .exe encontrado. Digite o caminho: ${RESET}"
         read -r SELECTED
         SELECTED=$(limpar_entrada "$SELECTED")
-    elif [[ "$CHOICE" =~ ^[0-9]+$ ]] && (( CHOICE >= 1 && CHOICE <= ${#EXES[@]} )); then
-        SELECTED="${EXES[$((CHOICE-1))]}"
+        [[ -f "$SELECTED" ]] || erro "Arquivo não encontrado: '$SELECTED'"
     else
-        erro "Opção inválida: '$CHOICE'"
+        echo ""
+        echo -e "  ${BOLD}Jogos encontrados:${RESET}"
+        echo ""
+        for i in "${!EXES[@]}"; do
+            echo -e "  ${YELLOW}[$((i+1))]${RESET}  ${BOLD}$(basename "${EXES[$i]}")${RESET}"
+            echo -e "        ${DIM}${EXES[$i]}${RESET}"
+        done
+        echo ""
+        echo -e "  ${CYAN}[0]${RESET}  Digitar caminho manualmente"
+        echo ""
+        echo -ne "  ${CYAN}Escolha: ${RESET}"
+        read -r CHOICE
+
+        if [[ "$CHOICE" == "0" ]]; then
+            echo -ne "  Caminho: "
+            read -r SELECTED
+            SELECTED=$(limpar_entrada "$SELECTED")
+        elif [[ "$CHOICE" =~ ^[0-9]+$ ]] && (( CHOICE >= 1 && CHOICE <= ${#EXES[@]} )); then
+            SELECTED="${EXES[$((CHOICE-1))]}"
+        else
+            erro "Opção inválida: '$CHOICE'"
+        fi
     fi
 fi
 
