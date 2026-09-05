@@ -12,7 +12,7 @@ jobs:
       - name: Instalar Xvfb e dependências auxiliares
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb imagemagick x11-apps wmctrl
+          sudo apt-get install -y xvfb imagemagick x11-apps
 
       - name: Baixar o CS 1.6 Portable na mesma pasta do wine67.sh
         run: |
@@ -37,7 +37,7 @@ jobs:
             sleep "$sleep_time"
             elapsed=$t
             echo "=== ${t}s - janelas abertas ==="
-            wmctrl -l || echo "wmctrl sem retorno (nenhuma janela ainda?)"
+            xwininfo -root -tree | grep -E '".*"' || echo "Nenhuma janela encontrada ainda"
             xwd -root -silent | convert xwd:- "screenshot-${t}s.png" || true
           done
 
