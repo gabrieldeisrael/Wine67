@@ -12,7 +12,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Instalar dependências do Xvfb, xwd e suporte a 32-bits
+      - name: Instalar Xvfb, imagemagick e x11-apps (pra screenshot)
         run: |
           sudo apt-get update
           sudo apt-get install -y xvfb imagemagick x11-apps
@@ -29,7 +29,6 @@ jobs:
           sleep 2
           chmod +x wine67.sh
           ./wine67.sh --dontdotnet --dontgecko cs16.exe &
-
           for t in 10 30 60; do
             sleep_time=$((t - ${elapsed:-0}))
             sleep "$sleep_time"
