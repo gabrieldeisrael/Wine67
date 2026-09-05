@@ -12,7 +12,7 @@ jobs:
       - name: Instalar Xvfb e dependências auxiliares
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb imagemagick x11-apps
+          sudo apt-get install -y xvfb imagemagick x11-apps x11-utils
 
       - name: Baixar o CS 1.6 Portable na mesma pasta do wine67.sh
         run: |
