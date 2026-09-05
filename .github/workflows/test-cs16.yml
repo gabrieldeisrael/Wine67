@@ -1,6 +1,9 @@
 name: Teste CS 1.6 Portable (Wine67)
 
 on:
+  push:
+    paths:
+      - 'wine67.sh'
   workflow_dispatch:
 
 jobs:
