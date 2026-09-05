@@ -29,8 +29,9 @@ Opções:
     --why              Não ouse.
     --lol              HAHAHAHAHAHAAHAHA.
     --chaos            Ativa o modo caos e sai.
+    --gamble           Ativa comportamento aleatório (para testes) (mentira).
     --beer             Oferece uma lição de moral sobre bebidas alcoólicas.
-    --unpredictable    Ativa comportamento aleatório (para testes) (mentira).
+    --unpredictable.   Ativa comportamento aleatório (para testes) (mentira).
     --panic            Remove o Wine e sai (modo destrutivo).
     --igotsudo         Verifica se você tem privilégios de sudo.
     --winetricks       Abre o winetricks (se instalado).
@@ -62,12 +63,15 @@ for arg in "$@"; do
         --winetricks)
             RUN_WINETRICKS=1
             ;;
-        --unpredictable)
+        --unpredictable | --gamble)
             UNPREDICTABLE=1
             set +e
             ;;
         --dontgecko)  DISABLE_GECKO=1 ;;
-        --test)        echo "Isso é um teste." ;;
+        --test)
+            echo "Isso é um teste."
+            exit 0
+            ;;
         --lol)        
              for i in {1..50}; do
                 echo "HAHAHAHAHAHAAHAHA"
@@ -118,7 +122,7 @@ for arg in "$@"; do
             ;;
         --todaysword)
             echo "A palavra do dia é: $(shuf -n1 /usr/share/dict/words 2>/dev/null || echo 'Dona')"
-            sleep 10
+            exit 0
             ;; 
         --nevernude)
             echo "Por acaso você é Tobias Fünke?"
@@ -141,7 +145,17 @@ for arg in "$@"; do
             sleep 5
             exit 1
             ;;
-        *)            EXE_ARG="$arg" ;;
+        *)
+            if [[ "$arg" == -* ]]; then
+                printf 'Opção desconhecida: %s\n' "$arg" >&2
+                exit 1
+            fi
+            if [[ -n "$EXE_ARG" ]]; then
+                printf 'Informe apenas um executável.\n' >&2
+                exit 1
+            fi
+            EXE_ARG="$arg"
+            ;;
         
     esac
 done
@@ -376,15 +390,7 @@ WINEDLLOVERRIDES_BASE="uiautomationcore=d;oleacc=d;tabtip.exe=d;winemenubuilder=
 export WINEDLLOVERRIDES="$WINEDLLOVERRIDES_BASE"
 export NO_AT_BRIDGE=1
 export QT_ACCESSIBILITY=0
-#RUN_WINECFG e RUN_SHELL para abrir winecfg ou shell do prefixo.
-if (( RUN_SHELL == 1 )); then
-    info "Abrindo shell do prefixo Wine..."
-    exec "$WINE_BIN" cmd
-fi
-if (( RUN_WINECFG == 1 )); then
-    info "Abrindo winecfg..."
-    exec "$WINE_BIN" winecfg
-fi
+
 
 
 # ABRIR WINETRICKS
@@ -456,20 +462,36 @@ if [[ ! -f "$WINEPREFIX/system.reg" ]]; then
     WINEARCH=win64 "$WINE_BIN" wineboot -i &>/dev/null &
     boot_pid=$!
     spinner "$boot_pid" "Configurando ambiente Wine..."
-    wait "$boot_pid" || true
+    if ! wait "$boot_pid"; then
+        erro "Falha ao inicializar o prefixo Wine."
+    fi
+fi
+#RUN_WINECFG e RUN_SHELL para abrir winecfg ou shell do prefixo.
+if (( RUN_SHELL == 1 )); then
+    info "Abrindo shell do prefixo Wine..."
+    exec "$WINE_BIN" cmd
+fi
+if (( RUN_WINECFG == 1 )); then
+    info "Abrindo winecfg..."
+    exec "$WINE_BIN" winecfg
 fi
 
-# DETECTAR UNITY E MONTAR COMANDO
+declare -a wine_args=("$SELECTED")
 EXTRA_FLAGS=""
+
 if detectar_unity "$SELECTED"; then
-    aviso "Jogo Unity detectado — aplicando flags de compatibilidade D3D11"
+    aviso "Jogo Unity detectado"
     EXTRA_FLAGS="-force-d3d11 -nolog"
+    wine_args+=("-force-d3d11" "-nolog")
 fi
 
 # Configura áudio via PipeWire/PulseAudio
-PULSE_SOCKET=$(pactl info 2>/dev/null | grep 'Server String' | awk '{print $3}')
-if [[ -n "$PULSE_SOCKET" ]]; then
-    export PULSE_SERVER="unix:$PULSE_SOCKET"
+
+if command -v pactl >/dev/null 2>&1; then
+    PULSE_SOCKET=$(pactl info 2>/dev/null | awk '/Server String/ {print $3}')
+    if [[ -n "$PULSE_SOCKET" ]]; then
+        export PULSE_SERVER="unix:$PULSE_SOCKET"
+    fi
 fi
 
 echo ""
@@ -483,9 +505,6 @@ echo ""
 echo ""
 
 # EXECUTAR - Usar array para argumentos seguros
-declare -a wine_args=("$SELECTED")
-[[ -n "$EXTRA_FLAGS" ]] && wine_args+=($EXTRA_FLAGS)
-
 WINEARCH=win64 "$WINE_BIN" "${wine_args[@]}"
 
 EXIT=$?
