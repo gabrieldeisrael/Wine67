@@ -9,47 +9,57 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Instalar Wine e Xvfb
+      - name: Instalar Xvfb e dependências auxiliares
         run: |
-          sudo dpkg --add-architecture i386
           sudo apt-get update
-          sudo apt-get install -y wine xvfb imagemagick x11-apps
+          sudo apt-get install -y xvfb imagemagick x11-apps x11-utils
 
-      - name: Baixar o CS 1.6 Portable
+      - name: Baixar o CS 1.6 Portable na mesma pasta do wine67.sh
         run: |
-          wget -O cs16.exe "https://baixesoft.com/servidor_download/Counter-Strike_1.6_Portable.exe"
+          wget -O cs16.exe \
+            "https://github.com/gabrieldeisrael/Wine67/releases/download/v1.2/Counter-Strike_1.6_Portable.exe"
 
-      - name: Rodar com display virtual (self-extractor + jogo)
+      - name: Rodar wine67.sh com display virtual
         run: |
           Xvfb :99 -screen 0 1024x768x24 &
           export DISPLAY=:99
           sleep 2
-          wine cs16.exe -novid -nosound &
+          chmod +x wine67.sh
+          # modo direto: pula o prompt interativo, pega o .exe da pasta
+          ./wine67.sh --dontdotnet --dontgecko *.exe > wine67.log 2>&1 &
           echo $! > game.pid
-          sleep 15
+
+      - name: Diagnóstico - checar janelas e tirar screenshots ao longo do tempo
+        run: |
+          export DISPLAY=:99
+          for t in 10 30 60; do
+            sleep_time=$((t - ${elapsed:-0}))
+            sleep "$sleep_time"
+            elapsed=$t
+            echo "=== ${t}s - janelas abertas ==="
+            xwininfo -root -tree | grep -E '".*"' || echo "Nenhuma janela encontrada ainda"
+            xwd -root -silent | convert xwd:- "screenshot-${t}s.png" || true
+          done
 
       - name: Procurar arquivos de demo (.dem) extraídos
         run: |
-          find ~/.wine -iname "*.dem" 2>/dev/null || echo "Nenhuma demo encontrada"
+          find ~/.wine "$HOME/.cache/wine67" -iname "*.dem" 2>/dev/null || echo "Nenhuma demo encontrada"
 
-      - name: Tirar screenshot pra conferência visual
+      - name: Checar se o processo ainda está de pé
         run: |
-          export DISPLAY=:99
-          xwd -root -silent | convert xwd:- screenshot.png || true
-
-      - name: Aguardar até completar 5 minutos e checar se ainda está de pé
-        run: |
-          sleep 285
           PID=$(cat game.pid)
           if kill -0 "$PID" 2>/dev/null; then
-            echo "Ainda rodando após 5 min - OK"
+            echo "Ainda rodando após 1 min - OK"
           else
             echo "Fechou/crashou antes do esperado - FALHOU"
+            cat wine67.log
             exit 1
           fi
 
-      - name: Salvar screenshot como artefato
+      - name: Salvar screenshots e log como artefatos
         uses: actions/upload-artifact@v4
         with:
-          name: screenshot-teste
-          path: screenshot.png
+          name: diagnostico-teste
+          path: |
+            screenshot-*.png
+            wine67.log
