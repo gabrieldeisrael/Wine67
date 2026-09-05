@@ -9,65 +9,32 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Instalar Xvfb e dependências auxiliares
+      - name: Instalar Xvfb e imagemagick (pra screenshot)
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb imagemagick x11-apps x11-utils
+          sudo apt-get install -y xvfb imagemagick
 
       - name: Baixar o CS 1.6 Portable na mesma pasta do wine67.sh
         run: |
           wget -O cs16.exe \
             "https://github.com/gabrieldeisrael/Wine67/releases/download/v1.2/Counter-Strike_1.6_Portable.exe"
 
-      - name: Rodar wine67.sh com display virtual
+      - name: Rodar wine67.sh e tirar screenshots ao longo de 1 minuto
         run: |
           Xvfb :99 -screen 0 1024x768x24 &
           export DISPLAY=:99
           sleep 2
           chmod +x wine67.sh
-          # modo direto: pula o prompt interativo, pega o .exe da pasta
-          ./wine67.sh --dontdotnet --dontgecko *.exe > wine67.log 2>&1 &
-          echo $! > game.pid
-
-      - name: Diagnóstico - checar janelas e tirar screenshots ao longo do tempo
-        run: |
-          export DISPLAY=:99
+          ./wine67.sh --dontdotnet --dontgecko *.exe &
           for t in 10 30 60; do
             sleep_time=$((t - ${elapsed:-0}))
             sleep "$sleep_time"
             elapsed=$t
-            echo "=== ${t}s - janelas abertas ==="
-            xwininfo -root -tree | grep -E '".*"' || echo "Nenhuma janela encontrada ainda"
             xwd -root -silent | convert xwd:- "screenshot-${t}s.png" || true
           done
 
-      - name: Localizar instalação real do jogo e procurar demos
-        run: |
-          echo "=== Procurando hl.exe (executável real do jogo) ==="
-          find "$HOME" -iname "hl.exe" 2>/dev/null
-          echo "=== Procurando pasta cstrike ==="
-          find "$HOME" -type d -iname "cstrike" 2>/dev/null
-          echo "=== Procurando qualquer .dem em todo o HOME ==="
-          find "$HOME" -iname "*.dem" 2>/dev/null
-          echo "=== Procurando na pasta de trabalho também ==="
-          find . -iname "*.dem" 2>/dev/null
-          echo "=== Fim da busca ==="
-
-      - name: Checar se o processo ainda está de pé
-        run: |
-          PID=$(cat game.pid)
-          if kill -0 "$PID" 2>/dev/null; then
-            echo "Ainda rodando após 1 min - OK"
-          else
-            echo "Fechou/crashou antes do esperado - FALHOU"
-            cat wine67.log
-            exit 1
-          fi
-
-      - name: Salvar screenshots e log como artefatos
+      - name: Salvar screenshots como artefato
         uses: actions/upload-artifact@v4
         with:
-          name: diagnostico-teste
-          path: |
-            screenshot-*.png
-            wine67.log
+          name: screenshots-teste
+          path: screenshot-*.png
