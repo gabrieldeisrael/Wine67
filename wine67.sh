@@ -37,6 +37,7 @@ for arg in "$@"; do
     case "$arg" in
         --dontdotnet) DISABLE_MONO=1 ;;
         --dontgecko)  DISABLE_GECKO=1 ;;
+        --test)        echo "Isso é um teste." ;;
         --lol)        
              for i in {1..50}; do
                 echo "HAHAHAHAHAHAAHAHA"
