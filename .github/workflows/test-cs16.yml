@@ -17,7 +17,8 @@ jobs:
 
       - name: Baixar o CS 1.6 Portable na mesma pasta do wine67.sh
         run: |
-          wget -O cs16.exe "https://baixesoft.com/servidor_download/Counter-Strike_1.6_Portable.exe"
+          wget -O cs16.exe \
+            "https://github.com/gabrieldeisrael/Wine67/releases/download/v1.2/Counter-Strike_1.6_Portable.exe"
 
       - name: Rodar wine67.sh com display virtual
         run: |
