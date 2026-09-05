@@ -41,9 +41,17 @@ jobs:
             xwd -root -silent | convert xwd:- "screenshot-${t}s.png" || true
           done
 
-      - name: Procurar arquivos de demo (.dem) extraídos
+      - name: Localizar instalação real do jogo e procurar demos
         run: |
-          find ~/.wine "$HOME/.cache/wine67" -iname "*.dem" 2>/dev/null || echo "Nenhuma demo encontrada"
+          echo "=== Procurando hl.exe (executável real do jogo) ==="
+          find "$HOME" -iname "hl.exe" 2>/dev/null
+          echo "=== Procurando pasta cstrike ==="
+          find "$HOME" -type d -iname "cstrike" 2>/dev/null
+          echo "=== Procurando qualquer .dem em todo o HOME ==="
+          find "$HOME" -iname "*.dem" 2>/dev/null
+          echo "=== Procurando na pasta de trabalho também ==="
+          find . -iname "*.dem" 2>/dev/null
+          echo "=== Fim da busca ==="
 
       - name: Checar se o processo ainda está de pé
         run: |
