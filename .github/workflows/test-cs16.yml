@@ -12,10 +12,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Instalar Xvfb e imagemagick (pra screenshot)
+      - name: Instalar dependências do Xvfb, xwd e suporte a 32-bits
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb imagemagick
+          sudo apt-get install -y xvfb imagemagick x11-apps libc6:i386 libncurses5:i386 libstdc++6:i386
 
       - name: Baixar o CS 1.6 Portable na mesma pasta do wine67.sh
         run: |
@@ -28,7 +28,8 @@ jobs:
           export DISPLAY=:99
           sleep 2
           chmod +x wine67.sh
-          ./wine67.sh --dontdotnet --dontgecko *.exe &
+          ./wine67.sh --dontdotnet --dontgecko cs16.exe &
+
           for t in 10 30 60; do
             sleep_time=$((t - ${elapsed:-0}))
             sleep "$sleep_time"
