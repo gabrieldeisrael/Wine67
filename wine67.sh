@@ -6,6 +6,19 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALL_DIR="$HOME/.cache/wine67"
 WINE_BIN="$INSTALL_DIR/bin/wine"
 
+# PARSING DE FLAGS
+DISABLE_MONO=0
+DISABLE_GECKO=0
+EXE_ARG=""
+
+for arg in "$@"; do
+    case "$arg" in
+        --dontdotnet) DISABLE_MONO=1 ;;
+        --dontgecko)  DISABLE_GECKO=1 ;;
+        *)            EXE_ARG="$arg" ;;
+    esac
+done
+
 # CORES
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
 CYAN='\033[0;36m'; BOLD='\033[1m'; DIM='\033[2m'; RESET='\033[0m'
@@ -222,9 +235,13 @@ else
     export WINE_DISABLE_FAST_SYNC=1
 fi
 
-export WINEDLLOVERRIDES="uiautomationcore=d;oleacc=d;tabtip.exe=d;winemenubuilder=d;rpcss=n;midimap=n;steam_api=b,n"
+WINEDLLOVERRIDES_BASE="uiautomationcore=d;oleacc=d;tabtip.exe=d;winemenubuilder=d;rpcss=n;midimap=n;steam_api=b,n"
+(( DISABLE_MONO == 1 ))  && WINEDLLOVERRIDES_BASE+=";mscoree=d"
+(( DISABLE_GECKO == 1 )) && WINEDLLOVERRIDES_BASE+=";mshtml=d"
+export WINEDLLOVERRIDES="$WINEDLLOVERRIDES_BASE"
 export NO_AT_BRIDGE=1
 export QT_ACCESSIBILITY=0
+
 
 # BUSCAR JOGOS (.EXE)
 echo ""
@@ -233,8 +250,8 @@ declare -a EXES
 SELECTED=""
 
 # MODO DIRETO: se um caminho de .exe foi passado como argumento, pula a busca/prompt
-if [[ -n "$1" ]]; then
-    SELECTED="$(limpar_entrada "$1")"
+if [[ -n "$EXE_ARG" ]]; then
+    SELECTED="$(limpar_entrada "$EXE_ARG")"
     [[ -f "$SELECTED" ]] || erro "Arquivo não encontrado: '$SELECTED'"
     ok "Modo direto: $(basename "$SELECTED")"
 else
