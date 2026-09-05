@@ -11,10 +11,73 @@ DISABLE_MONO=0
 DISABLE_GECKO=0
 EXE_ARG=""
 
+mostrar_ajuda() {
+        cat <<'EOF'
+Wine67 — inicializador do Wine
+
+Uso:
+    wine67.sh [opções] [programa.exe]
+
+Opções:
+    --dontdotnet       Desativa o Wine Mono.
+    --dontgecko        Desativa o Wine Gecko.
+    --help, -?         Mostra esta ajuda e sai.
+    --why              Não ouse.
+    --lol              HAHAHAHAHAHAAHAHA
+    --chaos            Ativa o modo caos e sai.
+    --beer             Oferece uma lição de moral sobre bebidas alcoólicas.
+
+
+O Wine é instalado em:
+    ~/.cache/wine67
+EOF
+}
+
 for arg in "$@"; do
     case "$arg" in
         --dontdotnet) DISABLE_MONO=1 ;;
         --dontgecko)  DISABLE_GECKO=1 ;;
+        --lol)        
+             for i in {1..50}; do
+                echo "HAHAHAHAHAHAAHAHA"
+            done
+            exit 42
+            ;;
+        --why) 
+            echo "Por que você está executando este script? É apenas um inicializador do Wine. Se quiser jogar, fique à vontade. Se quiser modificá-lo, fique à vontade. Mas, se está apenas curioso, então por quê?"
+            sleep 2
+            echo "Apenas saia daqui e nunca mais use --why."
+            sleep 2 
+            echo "O que você está esperando? Saia daqui! Pressione Ctrl+C para sair ou simplesmente feche o terminal. Eu não me importo."
+            sleep 2
+            echo "Ultimato: se você não sair agora, vai ganhar uma ferrovia grande, 20 trens. E você não quer isso. Você tem 5 segundos."
+            sleep 5
+            echo "Está bem, você pediu por isso"
+            for i in {1..20}; do
+                sl &
+            done
+            exit 42
+            ;;
+
+        --chaos) 
+            echo "Você ativou o modo caos. Boa sorte."
+            sleep 5
+            echo -e "\a"
+            for i in {1..200}; do
+                sl &
+            done
+            exit 666
+            ;;
+
+        --help|-?)
+            mostrar_ajuda
+            exit 0
+            ;;
+
+        --beer)
+            echo "Isso é Wine, que é vinho, mas não é cerveja. Se você quer cerveja, se vire."
+            exit 0
+            ;;
         *)            EXE_ARG="$arg" ;;
     esac
 done
