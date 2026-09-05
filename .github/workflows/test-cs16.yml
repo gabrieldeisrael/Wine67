@@ -26,7 +26,7 @@ jobs:
           sleep 2
           chmod +x wine67.sh
           # modo direto: pula o prompt interativo, pega o .exe da pasta
-          ./wine67.sh *.exe > wine67.log 2>&1 &
+          ./wine67.sh --dontdotnet --dontgecko *.exe > wine67.log 2>&1 &
           echo $! > game.pid
 
       - name: Diagnóstico - checar janelas e tirar screenshots ao longo do tempo
