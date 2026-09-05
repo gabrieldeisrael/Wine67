@@ -45,13 +45,13 @@ for arg in "$@"; do
             ;;
         --why) 
             echo "Por que você está executando este script? É apenas um inicializador do Wine. Se quiser jogar, fique à vontade. Se quiser modificá-lo, fique à vontade. Mas, se está apenas curioso, então por quê?"
-            sleep 2
+            sleep 10
             echo "Apenas saia daqui e nunca mais use --why."
-            sleep 2 
+            sleep 10
             echo "O que você está esperando? Saia daqui! Pressione Ctrl+C para sair ou simplesmente feche o terminal. Eu não me importo."
-            sleep 2
-            echo "Ultimato: se você não sair agora, vai ganhar uma ferrovia grande, 20 trens. E você não quer isso. Você tem 5 segundos."
-            sleep 5
+            sleep 10
+            echo "Ultimato: se você não sair agora, vai ganhar uma ferrovia grande, 20 trens. E você não quer isso. Você tem 15 segundos."
+            sleep 15
             echo "Está bem, você pediu por isso"
             for i in {1..20}; do
                 sl &
