@@ -1,0 +1,55 @@
+name: Teste CS 1.6 Portable (Wine67)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test-exe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar Wine e Xvfb
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y wine xvfb imagemagick x11-apps
+
+      - name: Baixar o CS 1.6 Portable
+        run: |
+          wget -O cs16.exe "https://baixesoft.com/servidor_download/Counter-Strike_1.6_Portable.exe"
+
+      - name: Rodar com display virtual (self-extractor + jogo)
+        run: |
+          Xvfb :99 -screen 0 1024x768x24 &
+          export DISPLAY=:99
+          sleep 2
+          wine cs16.exe -novid -nosound &
+          echo $! > game.pid
+          sleep 15
+
+      - name: Procurar arquivos de demo (.dem) extraídos
+        run: |
+          find ~/.wine -iname "*.dem" 2>/dev/null || echo "Nenhuma demo encontrada"
+
+      - name: Tirar screenshot pra conferência visual
+        run: |
+          export DISPLAY=:99
+          xwd -root -silent | convert xwd:- screenshot.png || true
+
+      - name: Aguardar até completar 5 minutos e checar se ainda está de pé
+        run: |
+          sleep 285
+          PID=$(cat game.pid)
+          if kill -0 "$PID" 2>/dev/null; then
+            echo "Ainda rodando após 5 min - OK"
+          else
+            echo "Fechou/crashou antes do esperado - FALHOU"
+            exit 1
+          fi
+
+      - name: Salvar screenshot como artefato
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshot-teste
+          path: screenshot.png
