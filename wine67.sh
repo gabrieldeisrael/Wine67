@@ -12,6 +12,8 @@ DISABLE_GECKO=0
 RUN_WINETRICKS=0
 EXE_ARG=""
 UNPREDICTABLE=0
+RUN_SHELL=0
+RUN_WINECFG=0
 
 mostrar_ajuda() {
         cat <<'EOF'
@@ -105,10 +107,10 @@ for arg in "$@"; do
             exit 0
             ;;
         --winecfg)
-            run_winecfg=1
+            RUN_WINECFG=1
             ;;
         --shell)
-            run_shell=1
+            RUN_SHELL=1
             ;;
         --saymyname)
             echo "Seu nome é $(whoami). Ou Heisenberg. Depende de como você se enxerga."
@@ -145,12 +147,12 @@ for arg in "$@"; do
 done
 
 if (( UNPREDICTABLE )); then
-    for variable in DISABLE_MONO DISABLE_GECKO RUN_WINETRICKS; do
+    for variable in DISABLE_MONO DISABLE_GECKO RUN_WINETRICKS RUN_SHELL RUN_WINECFG; do
         if (( RANDOM % 4 == 0 )); then
             printf -v "$variable" '%d' "$((1 - ${!variable}))"
         fi
     done
-fi
+fi 
 
 # CORES
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
@@ -374,6 +376,16 @@ WINEDLLOVERRIDES_BASE="uiautomationcore=d;oleacc=d;tabtip.exe=d;winemenubuilder=
 export WINEDLLOVERRIDES="$WINEDLLOVERRIDES_BASE"
 export NO_AT_BRIDGE=1
 export QT_ACCESSIBILITY=0
+#RUN_WINECFG e RUN_SHELL para abrir winecfg ou shell do prefixo.
+if (( RUN_SHELL == 1 )); then
+    info "Abrindo shell do prefixo Wine..."
+    exec "$WINE_BIN" cmd
+fi
+if (( RUN_WINECFG == 1 )); then
+    info "Abrindo winecfg..."
+    exec "$WINE_BIN" winecfg
+fi
+
 
 # ABRIR WINETRICKS
 if (( RUN_WINETRICKS == 1 )); then
