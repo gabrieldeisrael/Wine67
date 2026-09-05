@@ -9,7 +9,9 @@ WINE_BIN="$INSTALL_DIR/bin/wine"
 # PARSING DE FLAGS
 DISABLE_MONO=0
 DISABLE_GECKO=0
+RUN_WINETRICKS=0
 EXE_ARG=""
+UNPREDICTABLE=0
 
 mostrar_ajuda() {
         cat <<'EOF'
@@ -23,10 +25,19 @@ Opções:
     --dontgecko        Desativa o Wine Gecko.
     --help, -?         Mostra esta ajuda e sai.
     --why              Não ouse.
-    --lol              HAHAHAHAHAHAAHAHA
+    --lol              HAHAHAHAHAHAAHAHA.
     --chaos            Ativa o modo caos e sai.
     --beer             Oferece uma lição de moral sobre bebidas alcoólicas.
-
+    --unpredictable    Ativa comportamento aleatório (para testes) (mentira).
+    --panic            Remove o Wine e sai (modo destrutivo).
+    --igotsudo         Verifica se você tem privilégios de sudo.
+    --winetricks       Abre o winetricks (se instalado).
+    --debug            Ativa o modo de depuração (set -x).
+    --saymyname        Mostra seu nome de usuário (ou Heisenberg).
+    --todaysword       Mostra uma palavra aleatória do dicionário, com certeza útil.
+    --nevernude        Você é Tobias Fünke? Se sim, use esta flag.
+    --make-me-a-sandwich    Se você é root, faz um sanduíche. Se não, manda você se virar.
+    --imadeahugemistake     Se você é Gob Bluth, então sim, você fez uma grande besteira.
 
 O Wine é instalado em:
     ~/.cache/wine67
@@ -36,6 +47,23 @@ EOF
 for arg in "$@"; do
     case "$arg" in
         --dontdotnet) DISABLE_MONO=1 ;;
+        --debug) set -x ;;
+        --panic) rm -rf "$INSTALL_DIR" && echo "Pânico! Wine removido." && exit 0 ;;
+        --igotsudo) 
+            if sudo -n true 2>/dev/null; then
+                echo "Você tem privilégios de sudo."
+            else
+                echo "Você não tem privilégios de sudo."
+            fi
+            exit 0
+            ;;
+        --winetricks)
+            RUN_WINETRICKS=1
+            ;;
+        --unpredictable)
+            UNPREDICTABLE=1
+            set +e
+            ;;
         --dontgecko)  DISABLE_GECKO=1 ;;
         --test)        echo "Isso é um teste." ;;
         --lol)        
@@ -59,7 +87,6 @@ for arg in "$@"; do
             done
             exit 42
             ;;
-
         --chaos) 
             echo "Você ativou o modo caos. Boa sorte."
             sleep 5
@@ -69,19 +96,61 @@ for arg in "$@"; do
             done
             exit 666
             ;;
-
         --help|-?)
             mostrar_ajuda
             exit 0
             ;;
-
         --beer)
             echo "Isso é Wine, que é vinho, mas não é cerveja. Se você quer cerveja, se vire."
             exit 0
             ;;
+        --winecfg)
+            run_winecfg=1
+            ;;
+        --shell)
+            run_shell=1
+            ;;
+        --saymyname)
+            echo "Seu nome é $(whoami). Ou Heisenberg. Depende de como você se enxerga."
+            exit 0
+            ;;
+        --todaysword)
+            echo "A palavra do dia é: $(shuf -n1 /usr/share/dict/words 2>/dev/null || echo 'Dona')"
+            sleep 10
+            ;; 
+        --nevernude)
+            echo "Por acaso você é Tobias Fünke?"
+            sleep 5 
+            echo "Acho que você merece esse script, vai lá jogar."
+            sleep 2
+            ;;
+        --make-me-a-sandwich)
+            if [ "$EUID" -ne 0 ]; then
+                echo "O quê? Faça você mesmo."
+            else
+                echo "Ok, saindo um sanduíche!"
+            fi
+            exit 0
+            ;;
+        --imadeahugemistake)
+            echo "Você explodiu um iate de novo, Gob?"
+            sleep 5
+            echo "Você é um idiota, Gob."
+            sleep 5
+            exit 1
+            ;;
         *)            EXE_ARG="$arg" ;;
+        
     esac
 done
+
+if (( UNPREDICTABLE )); then
+    for variable in DISABLE_MONO DISABLE_GECKO RUN_WINETRICKS; do
+        if (( RANDOM % 4 == 0 )); then
+            printf -v "$variable" '%d' "$((1 - ${!variable}))"
+        fi
+    done
+fi
 
 # CORES
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
@@ -305,6 +374,14 @@ WINEDLLOVERRIDES_BASE="uiautomationcore=d;oleacc=d;tabtip.exe=d;winemenubuilder=
 export WINEDLLOVERRIDES="$WINEDLLOVERRIDES_BASE"
 export NO_AT_BRIDGE=1
 export QT_ACCESSIBILITY=0
+
+# ABRIR WINETRICKS
+if (( RUN_WINETRICKS == 1 )); then
+    command -v winetricks &>/dev/null || erro "Instale o 'winetricks' para continuar."
+    export WINEPREFIX="$INSTALL_DIR/prefixes/winetricks"
+    mkdir -p "$WINEPREFIX"
+    exec winetricks --gui
+fi
 
 
 # BUSCAR JOGOS (.EXE)
