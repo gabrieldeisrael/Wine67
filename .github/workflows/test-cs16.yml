@@ -1,4 +1,4 @@
-name: Teste CS 1.6 Portable (Wine67)
+name: Teste de Flags e Integridade (Wine67)
 
 on:
   push:
@@ -7,37 +7,62 @@ on:
   workflow_dispatch:
 
 jobs:
-  test-exe:
+  test-flags:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        flag:
+          - --dontdotnet
+          - --dontgecko
+          - --dontvulkan
+          - --test
+          - --igotsudo
+    steps:
+      - uses: actions/checkout@v4
+      - name: Executar flag ${{ matrix.flag }}
+        run: |
+          chmod +x wine67.sh
+          # Captura saída para verificar comportamento
+          OUTPUT=$(./wine67.sh ${{ matrix.flag }} --test 2>&1)
+
+          # Lógica de validação baseada na flag
+          case "${{ matrix.flag }}" in
+            --test)
+              echo "$OUTPUT" | grep -q "Isso é um teste." || exit 1
+              ;;
+            --igotsudo)
+              # Deve retornar que não tem sudo em ambiente CI
+              echo "$OUTPUT" | grep -q "Você não tem privilégios de sudo." || exit 1
+              ;;
+            --dontdotnet|--dontgecko|--dontvulkan)
+              # Apenas garantir que o script não falhe ao processar a flag
+              echo "Flag ${{ matrix.flag }} processada sem erros."
+              ;;
+          esac
+
+  test-cs16:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Instalar Xvfb, imagemagick e x11-apps (pra screenshot)
+      - name: Instalar dependências de interface
         run: |
           sudo apt-get update
           sudo apt-get install -y xvfb imagemagick x11-apps
-
-      - name: Baixar o CS 1.6 Portable na mesma pasta do wine67.sh
+      - name: Baixar o CS 1.6 Portable
         run: |
-          wget -O cs16.exe \
-            "https://github.com/gabrieldeisrael/Wine67/releases/download/v1.2/Counter-Strike_1.6_Portable.exe"
-
-      - name: Rodar wine67.sh e tirar screenshots ao longo de 1 minuto
+          wget -O cs16.exe "https://github.com/gabrieldeisrael/Wine67/releases/download/v1.2/Counter-Strike_1.6_Portable.exe"
+      - name: Rodar com DXVK e capturar screenshot
         run: |
           Xvfb :99 -screen 0 1024x768x24 &
           export DISPLAY=:99
           sleep 2
           chmod +x wine67.sh
-          ./wine67.sh --dontdotnet --dontgecko cs16.exe &
-          for t in 10 30 60; do
-            sleep_time=$((t - ${elapsed:-0}))
-            sleep "$sleep_time"
-            elapsed=$t
-            xwd -root -silent | convert xwd:- "screenshot-${t}s.png" || true
-          done
-
-      - name: Salvar screenshots como artefato
+          # Testa rodando com a nova flag --dontvulkan para garantir que ignora DXVK
+          ./wine67.sh --dontvulkan --dontdotnet --dontgecko cs16.exe &
+          sleep 20
+          xwd -root -silent | convert xwd:- "screenshot-cs16.png" || true
+      - name: Salvar screenshots
         uses: actions/upload-artifact@v4
         with:
-          name: screenshots-teste
-          path: screenshot-*.png
+          name: screenshot-cs16
+          path: screenshot-cs16.png

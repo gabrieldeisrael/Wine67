@@ -9,6 +9,7 @@ WINE_BIN="$INSTALL_DIR/bin/wine"
 # PARSING DE FLAGS
 DISABLE_MONO=0
 DISABLE_GECKO=0
+DISABLE_VULKAN=0
 RUN_WINETRICKS=0
 EXE_ARG=""
 UNPREDICTABLE=0
@@ -25,6 +26,7 @@ Uso:
 Opções:
     --dontdotnet       Desativa o Wine Mono.
     --dontgecko        Desativa o Wine Gecko.
+    --dontvulkan       Desativa o uso do DXVK (força wined3d).
     --help, -?         Mostra esta ajuda e sai.
     --why              Não ouse.
     --lol              HAHAHAHAHAHAAHAHA.
@@ -68,6 +70,7 @@ for arg in "$@"; do
             set +e
             ;;
         --dontgecko)  DISABLE_GECKO=1 ;;
+        --dontvulkan) DISABLE_VULKAN=1 ;;
         --test)
             echo "Isso é um teste."
             exit 0
@@ -392,6 +395,32 @@ export NO_AT_BRIDGE=1
 export QT_ACCESSIBILITY=0
 
 
+
+# Otimizações de driver
+export mesa_glthread=true
+export __GL_THREADED_OPTIMIZATIONS=1
+
+# DXVK (Performance Gráfica) - Check automático
+instalar_dxvk() {
+    if (( DISABLE_VULKAN == 1 )); then
+        echo "DXVK desativado via flag --dontvulkan."
+        return
+    fi
+    local dxvk_dir="$INSTALL_DIR/dxvk"
+    if [ ! -d "$dxvk_dir" ]; then
+        echo "Configurando DXVK..."
+        mkdir -p "$dxvk_dir"
+        local url
+        url=$(curl -s "https://api.github.com/repos/doitsujin/dxvk/releases/latest" | grep -o "https://github.com/doitsujin/dxvk/releases/download/.*/dxvk-.*.tar.gz" | head -n1)
+        curl -s -L "$url" | tar -xz -C "$dxvk_dir" --strip-components=1
+    fi
+    # Adicionar ao path de dlls do wine se vulkan estiver presente
+    if command -v vulkaninfo >/dev/null 2>&1 || [ -e /usr/lib/libvulkan.so.1 ]; then
+        export WINEPATH="$dxvk_dir/x64;$WINEPATH"
+        export WINEDLLOVERRIDES="d3d11=n;dxgi=n;$WINEDLLOVERRIDES"
+    fi
+}
+instalar_dxvk
 
 # ABRIR WINETRICKS
 if (( RUN_WINETRICKS == 1 )); then
