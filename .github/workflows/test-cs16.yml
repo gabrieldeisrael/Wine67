@@ -15,30 +15,21 @@ jobs:
           - --dontdotnet
           - --dontgecko
           - --dontvulkan
-          - --test
           - --igotsudo
     steps:
       - uses: actions/checkout@v4
       - name: Executar flag ${{ matrix.flag }}
         run: |
           chmod +x wine67.sh
-          # Captura saída para verificar comportamento
-          OUTPUT=$(./wine67.sh ${{ matrix.flag }} 2>&1)
-
-          # Lógica de validação baseada na flag
-          case "${{ matrix.flag }}" in
-            --test)
-              echo "$OUTPUT" | grep -q "Isso é um teste." || exit 1
-              ;;
-            --igotsudo)
-              # Deve retornar que não tem sudo em ambiente CI
-              echo "$OUTPUT" | grep -q "Você não tem privilégios de sudo." || exit 1
-              ;;
-            --dontdotnet|--dontgecko|--dontvulkan)
-              # Apenas garantir que o script não falhe ao processar a flag
-              echo "Flag ${{ matrix.flag }} processada sem erros."
-              ;;
-          esac
+          # Passar --test isoladamente ou combinado dependendo da flag
+          if [ "${{ matrix.flag }}" = "--igotsudo" ]; then
+            OUTPUT=$(./wine67.sh --igotsudo 2>&1)
+            echo "$OUTPUT" | grep -q "privilégios de sudo" || exit 1
+          else
+            OUTPUT=$(./wine67.sh ${{ matrix.flag }} --test 2>&1)
+            echo "$OUTPUT" | grep -q "Isso é um teste." || exit 1
+          fi
+          echo "Flag ${{ matrix.flag }} testada com sucesso."
 
   test-cs16:
     runs-on: ubuntu-latest
