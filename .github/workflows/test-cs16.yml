@@ -23,7 +23,7 @@ jobs:
         run: |
           chmod +x wine67.sh
           # Captura saída para verificar comportamento
-          OUTPUT=$(./wine67.sh ${{ matrix.flag }} --test 2>&1)
+          OUTPUT=$(./wine67.sh ${{ matrix.flag }} 2>&1)
 
           # Lógica de validação baseada na flag
           case "${{ matrix.flag }}" in
