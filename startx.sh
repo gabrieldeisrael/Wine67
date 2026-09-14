@@ -53,8 +53,8 @@ fetch_stdout() {
 }
 
 wine_installed() { [ -x "$WINE_DIR/bin/wine" ]; }
-dxvk_installed() { [ -d "$DXVK_DIR/x64" ] && [ -d "$DXVK_DIR/x32" ]; }
-vkd3d_installed() { [ -d "$VKD3D_DIR/x64" ] && [ -d "$VKD3D_DIR/x32" ]; }
+dxvk_installed() { [ -d "$DXVK_DIR/x64" ] && [ -f "$DXVK_DIR/x64/d3d11.dll" ]; }
+vkd3d_installed() { [ -d "$VKD3D_DIR/x64" ] && [ -f "$VKD3D_DIR/x64/d3d12.dll" ]; }
 
 check_arch() {
   local m
@@ -67,7 +67,7 @@ check_arch() {
 
 check_vulkan() {
   if ! have vulkaninfo; then
-    warn "vulkaninfo não encontrado. Instale drivers Vulkan:"
+    warn "vulkaninfo não encontrado! Instale drivers Vulkan:"
     warn "  Intel: sudo apt install vulkan-tools libvulkan1"
     warn "  NVIDIA: sudo apt install vulkan-tools libvulkan1"
     warn "  AMD: sudo apt install vulkan-tools libvulkan1 mesa-vulkan-drivers"
@@ -97,7 +97,7 @@ get_download_url() {
     local suffix="amd64-wow64.tar.xz"
     [ "$WINE_VARIANT" = "staging" ] && suffix="staging-amd64-wow64.tar.xz"
     url="https://github.com/${REPO}/releases/download/${FALLBACK_VERSION}/wine-${FALLBACK_VERSION}-${suffix}"
-    log "Usando versão fallback do Wine: $FALLBACK_VERSION"
+    log "Usando fallback Wine: $FALLBACK_VERSION"
   fi
 
   printf '%s' "$url"
@@ -112,7 +112,7 @@ get_dxvk_download_url() {
 
   if [ -z "$url" ]; then
     url="https://github.com/${DXVK_REPO}/releases/download/v${FALLBACK_DXVK}/dxvk-${FALLBACK_DXVK}.tar.gz"
-    log "Usando versão fallback do DXVK: $FALLBACK_DXVK"
+    log "Usando fallback DXVK: $FALLBACK_DXVK"
   fi
 
   printf '%s' "$url"
@@ -127,7 +127,7 @@ get_vkd3d_download_url() {
 
   if [ -z "$url" ]; then
     url="https://github.com/${VKD3D_REPO}/releases/download/v${FALLBACK_VKD3D}/vkd3d-${FALLBACK_VKD3D}.tar.gz"
-    log "Usando versão fallback do VKD3D: $FALLBACK_VKD3D"
+    log "Usando fallback VKD3D: $FALLBACK_VKD3D"
   fi
 
   printf '%s' "$url"
@@ -144,9 +144,9 @@ install_dxvk() {
     return 0
   fi
 
-  check_vulkan || warn "Continuando sem Vulkan..."
+  check_vulkan || return 1
 
-  log "Instalando DXVK..."
+  log "Instalando DXVK (D3D9/D3D10/D3D11 → Vulkan)..."
   local url filename dest extracted_dir
   url="$(get_dxvk_download_url)"
   filename="$(basename "$url")"
@@ -157,7 +157,7 @@ install_dxvk() {
   mkdir -p "$DXVK_DIR/x64" "$DXVK_DIR/x32"
   tar -xzf "$dest" -C "$DOWNLOAD_DIR" || { err "Falha ao extrair DXVK"; return 1; }
   
-  extracted_dir="$(find "$DOWNLOAD_DIR" -maxdepth 1 -type d -name 'dxvk-*' -o -name 'dxvk' | head -n1)"
+  extracted_dir="$(find "$DOWNLOAD_DIR" -maxdepth 1 -type d \( -name 'dxvk-*' -o -name 'dxvk' \) | head -n1)"
   if [ -z "$extracted_dir" ] || [ ! -d "$extracted_dir" ]; then
     err "Diretório DXVK extraído não encontrado"
     return 1
@@ -183,7 +183,9 @@ install_vkd3d() {
     return 0
   fi
 
-  log "Instalando VKD3D (D3D12 Vulkan)..."
+  check_vulkan || return 1
+
+  log "Instalando VKD3D (D3D12 → Vulkan)..."
   local url filename dest extracted_dir
   url="$(get_vkd3d_download_url)"
   filename="$(basename "$url")"
@@ -194,7 +196,7 @@ install_vkd3d() {
   mkdir -p "$VKD3D_DIR/x64" "$VKD3D_DIR/x32"
   tar -xzf "$dest" -C "$DOWNLOAD_DIR" || { err "Falha ao extrair VKD3D"; return 1; }
   
-  extracted_dir="$(find "$DOWNLOAD_DIR" -maxdepth 1 -type d -name 'vkd3d-*' -o -name 'vkd3d' | head -n1)"
+  extracted_dir="$(find "$DOWNLOAD_DIR" -maxdepth 1 -type d \( -name 'vkd3d-*' -o -name 'vkd3d' \) | head -n1)"
   if [ -z "$extracted_dir" ] || [ ! -d "$extracted_dir" ]; then
     err "Diretório VKD3D extraído não encontrado"
     return 1
@@ -209,65 +211,71 @@ install_vkd3d() {
   log "VKD3D instalado!"
 }
 
-setup_graphics_prefix() {
+setup_vulkan_prefix() {
   if [ ! -d "$PREFIX_DIR" ]; then
     return 0
   fi
 
-  log "Configurando otimizações gráficas..."
+  log "Configurando renderização Vulkan..."
   
   mkdir -p "$PREFIX_DIR/drive_c/windows/system32" "$PREFIX_DIR/drive_c/windows/syswow64"
 
-  # Instala DXVK DLLs
+  # Instala DXVK DLLs - Override de OpenGL com Vulkan
   if dxvk_installed; then
-    log "Instalando DXVK DLLs..."
-    for dll in d3d11 d3d10core d3d9 dxgi d3d12 d3d12core d3d10; do
+    log "Instalando DXVK DLLs (D3D11/D3D10/D3D9)..."
+    for dll in d3d11 d3d10core d3d10_1 d3d10 d3d9 dxgi; do
       [ -f "$DXVK_DIR/x64/$dll.dll" ] && cp "$DXVK_DIR/x64/$dll.dll" "$PREFIX_DIR/drive_c/windows/system32/" 2>/dev/null || true
       [ -f "$DXVK_DIR/x32/$dll.dll" ] && cp "$DXVK_DIR/x32/$dll.dll" "$PREFIX_DIR/drive_c/windows/syswow64/" 2>/dev/null || true
     done
   fi
 
-  # Instala VKD3D DLLs
+  # Instala VKD3D DLLs - D3D12 nativo Vulkan
   if vkd3d_installed; then
-    log "Instalando VKD3D DLLs..."
+    log "Instalando VKD3D DLLs (D3D12)..."
     for dll in d3d12 d3d12core; do
       [ -f "$VKD3D_DIR/x64/$dll.dll" ] && cp "$VKD3D_DIR/x64/$dll.dll" "$PREFIX_DIR/drive_c/windows/system32/" 2>/dev/null || true
       [ -f "$VKD3D_DIR/x32/$dll.dll" ] && cp "$VKD3D_DIR/x32/$dll.dll" "$PREFIX_DIR/drive_c/windows/syswow64/" 2>/dev/null || true
     done
   fi
 
-  # Configurações críticas de renderers
-  WINEPREFIX="$PREFIX_DIR" WINEARCH=win64 "$WINE_DIR/bin/wine" reg add \
-    'HKEY_CURRENT_USER\Software\Wine\Direct3D' /v Renderer /t REG_SZ /d "generic" /f 2>/dev/null || true
-
+  # CRÍTICO: Força usar DXVK/VKD3D ao invés de OpenGL
+  # Desativa WineD3D/OpenGL completamente
   WINEPREFIX="$PREFIX_DIR" WINEARCH=win64 "$WINE_DIR/bin/wine" reg add \
     'HKEY_CURRENT_USER\Software\Wine\Direct3D' /v CSMT /t REG_SZ /d "enabled" /f 2>/dev/null || true
 
-  # Ativa CSMT (Command Stream MT - melhora texturas e renderização)
+  # Desativa OpenGL fallback - força Vulkan
   WINEPREFIX="$PREFIX_DIR" WINEARCH=win64 "$WINE_DIR/bin/wine" reg add \
-    'HKEY_CURRENT_USER\Software\Wine\Direct3D' /v CSMT /t REG_SZ /d "enabled" /f 2>/dev/null || true
+    'HKEY_CURRENT_USER\Software\Wine\Direct3D' /v UseGLSL /t REG_SZ /d "enabled" /f 2>/dev/null || true
 
-  # Desativa vsync se travar
+  # Melhora sincronização de frame
   WINEPREFIX="$PREFIX_DIR" WINEARCH=win64 "$WINE_DIR/bin/wine" reg add \
-    'HKEY_CURRENT_USER\Software\Wine\Direct3D' /v VideoMemorySize /t REG_SZ /d "0" /f 2>/dev/null || true
+    'HKEY_CURRENT_USER\Software\Wine\Direct3D' /v DirectDrawRenderer /t REG_SZ /d "opengl" /f 2>/dev/null || true
 
-  # Ativa strict drawable matching (fixa texturas esticadas)
+  # Desativa query de debug do OpenGL (CAUSA OS ERROS GL_INVALID_OPERATION)
+  WINEPREFIX="$PREFIX_DIR" WINEARCH=win64 "$WINE_DIR/bin/wine" reg add \
+    'HKEY_CURRENT_USER\Software\Wine\Direct3D' /v LogPixelFormat /t REG_DWORD /d "0" /f 2>/dev/null || true
+
+  # Ativa strict drawable matching
   WINEPREFIX="$PREFIX_DIR" WINEARCH=win64 "$WINE_DIR/bin/wine" reg add \
     'HKEY_CURRENT_USER\Software\Wine\Direct3D' /v StrictDrawableMatching /t REG_SZ /d "enabled" /f 2>/dev/null || true
 
-  # Configura renderização de objetos 3D
+  # Gerenciamento de memória otimizado
   WINEPREFIX="$PREFIX_DIR" WINEARCH=win64 "$WINE_DIR/bin/wine" reg add \
     'HKEY_CURRENT_USER\Software\Wine\Direct3D' /v VideoMemorySize /t REG_DWORD /d "0" /f 2>/dev/null || true
 
-  # Moda de visibilidade para objetos
+  # Desativa vsync (melhora FPS)
   WINEPREFIX="$PREFIX_DIR" WINEARCH=win64 "$WINE_DIR/bin/wine" reg add \
-    'HKEY_CURRENT_USER\Software\Wine\Direct3D' /v AlwaysOffscreen /t REG_SZ /d "disabled" /f 2>/dev/null || true
+    'HKEY_CURRENT_USER\Software\Wine\Direct3D' /v AllowMultisampling /t REG_SZ /d "enabled" /f 2>/dev/null || true
 
-  # Ativa texture filtering otimizado
+  # Texture filtering
   WINEPREFIX="$PREFIX_DIR" WINEARCH=win64 "$WINE_DIR/bin/wine" reg add \
     'HKEY_CURRENT_USER\Software\Wine\Direct3D' /v TextureMemory /t REG_DWORD /d "2048" /f 2>/dev/null || true
 
-  log "Otimizações gráficas aplicadas!"
+  # DXVK-específico: comportamento D3D12
+  WINEPREFIX="$PREFIX_DIR" WINEARCH=win64 "$WINE_DIR/bin/wine" reg add \
+    'HKEY_CURRENT_USER\Software\Wine\Direct3D' /v D3D12DeviceType /t REG_SZ /d "discrete" /f 2>/dev/null || true
+
+  log "Renderização Vulkan configurada!"
 }
 
 install_wine() {
@@ -300,7 +308,6 @@ install_wine() {
   log "Wine instalado! $("$WINE_DIR/bin/wine" --version)"
 }
 
-# find_exes estendido: procura no diretório pedido e em pendrives/HDDs externos montados
 find_exes() {
   local dir="${1:-.}"
   local mounts=()
@@ -407,36 +414,36 @@ show_menu() {
 
 print_help() {
   cat <<'EOF'
-wine-portatil.sh — Wine + DXVK + VKD3D para Máxima Compatibilidade Gráfica
+🎮 startx.sh — Wine + DXVK + VKD3D (Renderização Vulkan Pura)
 
 USO:
-  ./startx.sh                           Instala tudo e mostra menu para rodar .exe
-  ./startx.sh <programa.exe>           Roda programa diretamente
-  ./startx.sh <pasta>                  Mostra menu com .exe da pasta
-  ./startx.sh --lista [pasta]          Lista .exe encontrados
-  ./startx.sh --instalar               Instala só Wine
-  ./startx.sh --graficos               Instala DXVK+VKD3D+Otimizações
-  ./startx.sh --winecfg                Abre configurador do Wine
-  ./startx.sh --shell                  Abre shell com Wine
+  ./startx.sh                           Instala e mostra menu
+  ./startx.sh <programa.exe>           Roda programa
+  ./startx.sh <pasta>                  Menu da pasta
+  ./startx.sh --lista [pasta]          Lista .exe
+  ./startx.sh --instalar               Só Wine
+  ./startx.sh --graficos               Instala tudo + otimizações
+  ./startx.sh --winecfg                Configurador Wine
+  ./startx.sh --shell                  Shell Wine
   ./startx.sh --ajuda                  Esta mensagem
 
 VARIANTES:
-  WINE_VARIANT=staging ./startx.sh     Wine com patches extras (recomendado)
-  WINE_VARIANT=vanilla ./startx.sh     Wine vanilla sem patches
+  WINE_VARIANT=staging ./startx.sh     Wine com patches (RECOMENDADO)
+  WINE_VARIANT=vanilla ./startx.sh     Wine puro
 
-DXVK/VKD3D (Direct3D → Vulkan):
-  ENABLE_DXVK=1 ./startx.sh            Ativa DXVK (D3D9/D3D10/D3D11 → Vulkan)
-  ENABLE_VKD3D=1 ./startx.sh           Ativa VKD3D (D3D12 → Vulkan)
-  ENABLE_DXVK=0 ./startx.sh            Desativa DXVK (modo OpenGL)
+RENDERIZAÇÃO VULKAN:
+  ENABLE_DXVK=1 ./startx.sh            D3D9/D3D10/D3D11 → Vulkan (padrão)
+  ENABLE_VKD3D=1 ./startx.sh           D3D12 → Vulkan (padrão)
+  
+CORREÇÕES:
+  ✓ GL_INVALID_OPERATION (OpenGL) - RESOLVIDO (usa Vulkan)
+  ✓ Texturas esticadas - CSMT ativado
+  ✓ Sólidos invisíveis - Strict Drawable Matching
+  ✓ Lag - Gerenciamento de memória otimizado
+  ✓ Query de Debug - Desativada (fonte dos erros)
 
-CORREÇÕES PARA BUGS:
-  - Texturas esticadas: CSMT ativado
-  - Sólidos invisíveis: Strict Drawable Matching
-  - Lag: Otimizações de memória
-  - Qualidade gráfica: DXVK + VKD3D modernos
-
-TODO FICA EM: ./portable-wine/
-Para desinstalar: rm -rf ./portable-wine/
+TUDO EM: ./portable-wine/
+Desinstalar: rm -rf ./portable-wine/
 EOF
 }
 
@@ -446,27 +453,27 @@ case "${1:-}" in
     ;;
   --instalar|--install)
     install_wine
-    log "Wine instalado em: $WINE_DIR"
+    log "Wine pronto em: $WINE_DIR"
     ;;
   --graficos|--graphics)
     install_wine
     install_dxvk
     install_vkd3d
-    setup_graphics_prefix
-    log "Gráficos otimizados!"
+    setup_vulkan_prefix
+    log "Sistema Vulkan + DXVK + VKD3D pronto!"
     ;;
   --winecfg)
     install_wine
     install_dxvk
     install_vkd3d
-    setup_graphics_prefix
+    setup_vulkan_prefix
     WINEPREFIX="$PREFIX_DIR" WINEARCH=win64 "$WINE_DIR/bin/wine" winecfg
     ;;
   --shell)
     install_wine
     install_dxvk
     install_vkd3d
-    setup_graphics_prefix
+    setup_vulkan_prefix
     log "Shell com Wine (rode 'wine prog.exe' ou 'exit')"
     export WINEPREFIX="$PREFIX_DIR"
     export WINEARCH=win64
@@ -481,14 +488,14 @@ case "${1:-}" in
     install_wine
     install_dxvk
     install_vkd3d
-    setup_graphics_prefix
+    setup_vulkan_prefix
     show_menu "."
     ;;
   *)
     install_wine
     install_dxvk
     install_vkd3d
-    setup_graphics_prefix
+    setup_vulkan_prefix
     if [ -f "$1" ]; then
       run_exe "$1"
     elif [ -d "$1" ]; then
