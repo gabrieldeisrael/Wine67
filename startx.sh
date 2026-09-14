@@ -7,13 +7,19 @@ BASE_DIR="$SCRIPT_DIR/portable-wine"
 WINE_DIR="$BASE_DIR/wine"
 PREFIX_DIR="$BASE_DIR/prefix"
 DOWNLOAD_DIR="$BASE_DIR/download"
+DXVK_DIR="$BASE_DIR/dxvk"
 
 WINE_VARIANT="${WINE_VARIANT:-vanilla}"
+ENABLE_DXVK="${ENABLE_DXVK:-1}"
+DXVK_VERSION="${DXVK_VERSION:-latest}"
 
 REPO="Kron4ek/Wine-Builds"
 API_LATEST="https://api.github.com/repos/${REPO}/releases/latest"
+DXVK_REPO="doitsujin/dxvk"
+DXVK_API_LATEST="https://api.github.com/repos/${DXVK_REPO}/releases/latest"
 
 FALLBACK_VERSION="11.15"
+FALLBACK_DXVK="2.6"
 
 log()  { printf '\n==> %s\n' "$1" >&2; }
 err()  { printf 'Erro: %s\n' "$1" >&2; }
@@ -41,6 +47,7 @@ fetch_stdout() {
 }
 
 wine_installed() { [ -x "$WINE_DIR/bin/wine" ]; }
+dxvk_installed() { [ -f "$DXVK_DIR/x64/d3d11.dll" ] && [ -f "$DXVK_DIR/x32/d3d11.dll" ]; }
 
 check_arch() {
   local m
@@ -50,6 +57,18 @@ check_arch() {
     err "Os builds do Wine usados aqui não cobrem outras arquiteturas."
     exit 1
   fi
+}
+
+check_vulkan() {
+  if ! have vulkaninfo; then
+    log "AVISO: vulkaninfo não encontrado. DXVK pode não funcionar corretamente."
+    log "Instale os drivers Vulkan para sua GPU:"
+    log "  - Intel: sudo apt install vulkan-tools libvulkan1"
+    log "  - NVIDIA: sudo apt install vulkan-tools libvulkan1 nvidia-driver"
+    log "  - AMD: sudo apt install vulkan-tools libvulkan1 mesa-vulkan-drivers"
+    return 1
+  fi
+  return 0
 }
 
 variant_regex() {
@@ -84,6 +103,115 @@ get_download_url() {
   printf '%s' "$url"
 }
 
+get_dxvk_download_url() {
+  local json url=""
+  
+  json="$(fetch_stdout "$DXVK_API_LATEST")"
+  if [ -n "$json" ]; then
+    url="$(printf '%s' "$json" \
+      | grep -oE '"browser_download_url": *"[^"]+"' \
+      | grep -E 'dxvk-[0-9.]+\.tar\.gz' \
+      | sed -E 's/.*"(https:[^"]+)".*/\1/' \
+      | head -n1 || true)"
+  fi
+
+  if [ -z "$url" ]; then
+    url="https://github.com/${DXVK_REPO}/releases/download/v${FALLBACK_DXVK}/dxvk-${FALLBACK_DXVK}.tar.gz"
+    log "Não consegui falar com a API do DXVK (pode ser limite de taxa)."
+    log "Usando versão de reserva: $FALLBACK_DXVK"
+  fi
+
+  printf '%s' "$url"
+}
+
+install_dxvk() {
+  if [ "$ENABLE_DXVK" != "1" ]; then
+    log "DXVK desabilitado (ENABLE_DXVK=0)"
+    return 0
+  fi
+
+  if dxvk_installed; then
+    log "DXVK já instalado em: $DXVK_DIR"
+    return 0
+  fi
+
+  check_vulkan || true
+
+  log "Procurando a versão mais recente do DXVK..."
+  local url filename dest
+  url="$(get_dxvk_download_url)"
+  filename="$(basename "$url")"
+  dest="$DOWNLOAD_DIR/$filename"
+
+  log "Baixando $filename (isso pode levar alguns minutos)"
+  fetch "$url" "$dest"
+
+  log "Extraindo DXVK para $DXVK_DIR"
+  mkdir -p "$DXVK_DIR/x64" "$DXVK_DIR/x32"
+  if ! tar -xzf "$dest" -C "$DOWNLOAD_DIR"; then
+    err "Falha ao extrair DXVK. Verifique se o arquivo está corrompido."
+    exit 1
+  fi
+
+  # Move os arquivos extraídos para o diretório final
+  local extracted_dir
+  extracted_dir="$(find "$DOWNLOAD_DIR" -maxdepth 1 -type d -name 'dxvk-*' | head -n1)"
+  if [ -z "$extracted_dir" ]; then
+    err "Não consegui localizar o diretório extraído do DXVK."
+    exit 1
+  fi
+
+  cp -r "$extracted_dir/x64"/* "$DXVK_DIR/x64/" 2>/dev/null || true
+  cp -r "$extracted_dir/x32"/* "$DXVK_DIR/x32/" 2>/dev/null || true
+  rm -rf "$extracted_dir" "$dest"
+
+  if ! dxvk_installed; then
+    err "A extração terminou mas não encontrei os DLLs do DXVK."
+    exit 1
+  fi
+
+  log "DXVK instalado com sucesso!"
+}
+
+setup_dxvk_prefix() {
+  if [ "$ENABLE_DXVK" != "1" ] || ! dxvk_installed; then
+    return 0
+  fi
+
+  log "Configurando DXVK no prefixo Wine..."
+
+  # Cria diretórios se não existirem
+  mkdir -p "$PREFIX_DIR/drive_c/windows/system32" "$PREFIX_DIR/drive_c/windows/syswow64"
+
+  # Copia DLLs de 64-bit
+  if [ -d "$DXVK_DIR/x64" ]; then
+    for dll in d3d11 dxgi d3d10core d3d9 d3d12 d3d12core dxvk_config; do
+      for ext in dll so; do
+        if [ -f "$DXVK_DIR/x64/${dll}.${ext}" ]; then
+          cp "$DXVK_DIR/x64/${dll}.${ext}" "$PREFIX_DIR/drive_c/windows/system32/" 2>/dev/null || true
+        fi
+      done
+    done
+  fi
+
+  # Copia DLLs de 32-bit
+  if [ -d "$DXVK_DIR/x32" ]; then
+    for dll in d3d11 dxgi d3d10core d3d9 d3d12 d3d12core dxvk_config; do
+      for ext in dll so; do
+        if [ -f "$DXVK_DIR/x32/${dll}.${ext}" ]; then
+          cp "$DXVK_DIR/x32/${dll}.${ext}" "$PREFIX_DIR/drive_c/windows/syswow64/" 2>/dev/null || true
+        fi
+      done
+    done
+  fi
+
+  # Configura wine.reg para usar DXVK
+  WINEPREFIX="$PREFIX_DIR" WINEARCH=win64 "$WINE_DIR/bin/wine" reg add \
+    'HKEY_CURRENT_USER\Software\Wine\Direct3D' /v VideoMemorySize /t REG_SZ /d 0 /f 2>/dev/null || true
+
+  log "DXVK configurado no prefixo!"
+}
+
 install_wine() {
   check_arch
 
@@ -91,7 +219,7 @@ install_wine() {
     return 0
   fi
 
-  mkdir -p "$BASE_DIR" "$DOWNLOAD_DIR" "$PREFIX_DIR"
+  mkdir -p "$BASE_DIR" "$DOWNLOAD_DIR" "$PREFIX_DIR" "$DXVK_DIR/x64" "$DXVK_DIR/x32"
 
   log "Procurando a versão mais recente do Wine ($WINE_VARIANT, wow64)..."
   local url filename dest
@@ -251,6 +379,7 @@ USO:
   ./wine-portatil.sh <programa.exe>     Roda esse .exe diretamente.
   ./wine-portatil.sh --lista [pasta]    Só lista os .exe encontrados.
   ./wine-portatil.sh --instalar         Só baixa/instala o Wine.
+  ./wine-portatil.sh --dxvk             Só instala o DXVK (Direct3D->Vulkan).
   ./wine-portatil.sh --winecfg          Abre o winecfg do prefixo portátil.
   ./wine-portatil.sh --shell            Abre um shell com wine no PATH.
   ./wine-portatil.sh --ajuda            Mostra esta mensagem.
@@ -261,6 +390,12 @@ Para "desinstalar", basta apagar essa pasta.
 Variante do Wine (defina antes de rodar):
   WINE_VARIANT=vanilla ./wine-portatil.sh   (padrão) Wine sem patches extras
   WINE_VARIANT=staging ./wine-portatil.sh   Com patches extras de compatibilidade
+
+Compatibilidade DXVK/DirectX:
+  ENABLE_DXVK=1 ./wine-portatil.sh          (padrão) Usa DXVK para melhor
+                                             compatibilidade com D3D11/D3D12
+  ENABLE_DXVK=0 ./wine-portatil.sh          Desabilita DXVK (modo OpenGL puro)
+  DXVK_VERSION=2.5 ./wine-portatil.sh       Especifica versão do DXVK
 EOF
 }
 
@@ -272,12 +407,22 @@ case "${1:-}" in
     install_wine
     log "Pronto. Wine em: $WINE_DIR"
     ;;
+  --dxvk)
+    install_wine
+    install_dxvk
+    setup_dxvk_prefix
+    log "DXVK configurado em: $DXVK_DIR"
+    ;;
   --winecfg)
     install_wine
+    install_dxvk
+    setup_dxvk_prefix
     WINEPREFIX="$PREFIX_DIR" WINEARCH=win64 "$WINE_DIR/bin/wine" winecfg
     ;;
   --shell)
     install_wine
+    install_dxvk
+    setup_dxvk_prefix
     log "Shell com Wine portátil no PATH (rode 'wine programa.exe'; 'exit' sai)"
     export WINEPREFIX="$PREFIX_DIR"
     export WINEARCH=win64
@@ -290,10 +435,14 @@ case "${1:-}" in
     ;;
   "")
     install_wine
+    install_dxvk
+    setup_dxvk_prefix
     show_menu "."
     ;;
   *)
     install_wine
+    install_dxvk
+    setup_dxvk_prefix
     if [ -f "$1" ]; then
       run_exe "$1"
     elif [ -d "$1" ]; then
