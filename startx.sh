@@ -426,7 +426,8 @@ USO:
   ./startx.sh --winecfg                Configurador Wine
   ./startx.sh --shell                  Shell Wine
   ./startx.sh --ajuda                  Esta mensagem
-
+  ./startx.sh --remover                Remover o Wine
+  
 VARIANTES:
   WINE_VARIANT=staging ./startx.sh     Wine com patches (RECOMENDADO)
   WINE_VARIANT=vanilla ./startx.sh     Wine puro
@@ -443,7 +444,6 @@ CORREÇÕES:
   ✓ Query de Debug - Desativada (fonte dos erros)
 
 TUDO EM: ./portable-wine/
-Desinstalar: rm -rf ./portable-wine/
 EOF
 }
 
@@ -468,6 +468,11 @@ case "${1:-}" in
     install_vkd3d
     setup_vulkan_prefix
     WINEPREFIX="$PREFIX_DIR" WINEARCH=win64 "$WINE_DIR/bin/wine" winecfg
+    ;;
+  --remover)
+    rm -rf ./portable-wine/
+    sleep 1
+    echo Tudo limpo!
     ;;
   --shell)
     install_wine
