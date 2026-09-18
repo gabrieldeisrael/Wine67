@@ -473,6 +473,7 @@ case "${1:-}" in
     rm -rf ./portable-wine/
     sleep 1
     echo Tudo limpo!
+    exit 0
     ;;
   --shell)
     install_wine
