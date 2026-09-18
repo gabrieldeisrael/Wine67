@@ -310,60 +310,15 @@ install_wine() {
 
 find_exes() {
   local dir="${1:-.}"
-  local mounts=()
-  local mp
+  local res=() file
 
-  mounts+=("$dir")
-
-  for base in "/run/media/${USER:-$(whoami)}" "/media" "/mnt" "/Volumes"; do
-    if [ -d "$base" ]; then
-      for mp in "$base"/*; do
-        [ -d "$mp" ] && mounts+=("$mp")
-      done
-    fi
-  done
-
-  if have lsblk; then
-    while IFS= read -r line; do
-      mp="$(printf '%s' "$line" | awk '{ for(i=2;i<=NF;i++){ printf "%s%s", $i, (i==NF?ORS:OFS)} }' )"
-      [ -n "$mp" ] && mounts+=("$mp")
-    done < <(lsblk -rpo 'RM,MOUNTPOINT' 2>/dev/null | awk '$1==1 && $2!="" { $1=""; sub(/^ /,""); print }' || true)
-  else
-    if [ -r /proc/mounts ]; then
-      while IFS= read -r line; do
-        case "$line" in
-          /dev/sd*|/dev/mmcblk*)
-            mp="$(printf '%s' "$line" | awk '{print $2}')"
-            [ -n "$mp" ] && mounts+=("$mp")
-            ;;
-        esac
-      done < /proc/mounts
-    fi
+  if [ ! -d "$dir" ]; then
+    return 1
   fi
 
-  local uniq=() found
-  for mp in "${mounts[@]}"; do
-    [ -z "$mp" ] && continue
-    if [ -d "$mp" ]; then
-      mp="$(cd -- "$mp" 2>/dev/null && pwd || echo "$mp")"
-    fi
-    case "$mp" in
-      "$BASE_DIR"*) continue ;;
-    esac
-    found=false
-    for u in "${uniq[@]}"; do
-      [ "$u" = "$mp" ] && found=true
-    done
-    $found || uniq+=("$mp")
-  done
-
-  local res=() file
-  for mp in "${uniq[@]}"; do
-    [ -d "$mp" ] || continue
-    while IFS= read -r file; do
-      [ -n "$file" ] && res+=("$file")
-    done < <(find "$mp" -maxdepth 5 -type f -iname '*.exe' -not -path "*/portable-wine/*" 2>/dev/null || true)
-  done
+  while IFS= read -r file; do
+    [ -n "$file" ] && res+=("$file")
+  done < <(find "$dir" -maxdepth 5 -type f -iname '*.exe' -not -path "*/portable-wine/*" 2>/dev/null || true)
 
   if [ "${#res[@]}" -gt 0 ]; then
     printf '%s\n' "${res[@]}" | sort -u
@@ -470,9 +425,13 @@ case "${1:-}" in
     WINEPREFIX="$PREFIX_DIR" WINEARCH=win64 "$WINE_DIR/bin/wine" winecfg
     ;;
   --remover)
-    rm -rf ./portable-wine/
-    sleep 1
-    echo Tudo limpo!
+    if rm -rf -- "$BASE_DIR"; then
+      echo "Removido: $BASE_DIR"
+    else
+      err "Falha ao remover: $BASE_DIR"
+      exit 1
+    fi
+    log "Wine removido de: $BASE_DIR"
     exit 0
     ;;
   --shell)
