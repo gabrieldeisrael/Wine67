@@ -33,7 +33,7 @@ Opções:
     --chaos            Ativa o modo caos e sai.
     --gamble           Ativa comportamento aleatório (para testes) (mentira).
     --beer             Oferece uma lição de moral sobre bebidas alcoólicas.
-    --unpredictable.   Ativa comportamento aleatório (para testes) (mentira).
+    --unpredictable   Ativa comportamento aleatório (para testes) (mentira).
     --panic            Remove o Wine e sai (modo destrutivo).
     --igotsudo         Verifica se você tem privilégios de sudo.
     --winetricks       Abre o winetricks (se instalado).
@@ -151,15 +151,16 @@ for arg in "$@"; do
         *)
             if [[ "$arg" == -* ]]; then
                 printf 'Opção desconhecida: %s\n' "$arg" >&2
+                mostrar_ajuda
                 exit 1
             fi
             if [[ -n "$EXE_ARG" ]]; then
                 printf 'Informe apenas um executável.\n' >&2
+                mostrar_ajuda
                 exit 1
             fi
             EXE_ARG="$arg"
-            ;;
-        
+            ;;       
     esac
 done
 
