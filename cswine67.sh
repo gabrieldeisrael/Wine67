@@ -6,7 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALL_DIR="$HOME/.cache/wine67"
 WINE_BIN="$INSTALL_DIR/bin/wine"
 
-APP_URL="https://baixesoft.com/servidor_download/Counter-Strike_1.6_Portable.exe"
+APP_URL="https://github.com/gabrieldeisrael/Wine67/releases/download/v1.2/Counter-Strike_1.6_Portable.exe"
 APP_NAME="Counter-Strike_1.6_Portable.exe"
 
 APP_DIR="$SCRIPT_DIR/apps"
