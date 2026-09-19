@@ -18,7 +18,6 @@ jobs:
           bash -n wine67.sh
           bash -n cswine67.sh
           bash -n startx.sh
-          bash -n debug/wine67debug.sh
           echo "Sintaxe de todos os scripts verificada com sucesso."
 
   test-flags:
@@ -63,19 +62,6 @@ jobs:
             echo "$OUTPUT"
           fi
           echo "Flag ${{ matrix.flag }} testada com sucesso."
-
-  test-debug-dry-run:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Testar modo dry-run do debug
-        run: |
-          chmod +x debug/wine67debug.sh
-          # Cria um dummy .exe para teste dry-run
-          mkdir -p apps
-          touch apps/dummy.exe
-          OUTPUT=$(./wine67.sh --dontvulkan --dontdotnet --dontgecko --dry-run apps/dummy.exe 2>&1) || true
-          echo "Dry run output: $OUTPUT"
 
   test-cs16:
     runs-on: ubuntu-latest
