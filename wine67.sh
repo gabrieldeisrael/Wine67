@@ -43,6 +43,8 @@ Opções:
     --nevernude        Você é Tobias Fünke? Se sim, use esta flag.
     --make-me-a-sandwich    Se você é root, faz um sanduíche. Se não, manda você se virar.
     --imadeahugemistake     Se você é Gob Bluth, então sim, você fez uma grande besteira.
+    --version          Mostra a versão do Wine67.
+    --status           Mostra o status de instalação do Wine e cache.
 
 O Wine é instalado em:
     ~/.cache/wine67
@@ -147,6 +149,20 @@ for arg in "$@"; do
             echo "Você é um idiota, Gob."
             sleep 5
             exit 1
+            ;;
+        --version)
+            echo "Wine67 v2.1 (StartX portable engine)"
+            exit 0
+            ;;
+        --status)
+            echo "Diretório de cache: $INSTALL_DIR"
+            if [ -x "$WINE_BIN" ]; then
+                echo "Status do Wine: Instalado ($WINE_BIN)"
+                "$WINE_BIN" --version 2>/dev/null || true
+            else
+                echo "Status do Wine: Não instalado ou incompleto em $INSTALL_DIR"
+            fi
+            exit 0
             ;;
         *)
             if [[ "$arg" == -* ]]; then
