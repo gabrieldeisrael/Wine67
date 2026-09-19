@@ -1,6 +1,27 @@
 #!/usr/bin/env bash
-
 set -euo pipefail
+
+# Verifica se o usuário passou a flag --debug (em qualquer posição) e a
+# remove da lista de argumentos, para não atrapalhar o resto do parsing.
+DEBUG_MODE=0
+ARGS=()
+for arg in "$@"; do
+    if [ "$arg" = "--debug" ]; then
+        DEBUG_MODE=1
+    else
+        ARGS+=("$arg")
+    fi
+done
+set -- "${ARGS[@]+"${ARGS[@]}"}"
+
+if [ "$DEBUG_MODE" -eq 1 ]; then
+    # Desativa o -e e o -u
+    set +eu
+    # Desativa o pipefail
+    set +o pipefail
+    # Ativa o modo de depuração (-x)
+    set -x
+fi
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 BASE_DIR="$SCRIPT_DIR/portable-wine"
@@ -382,7 +403,9 @@ USO:
   ./startx.sh --shell                  Shell Wine
   ./startx.sh --ajuda                  Esta mensagem
   ./startx.sh --remover                Remover o Wine
-  
+  ./startx.sh --debug [...]            Roda com 'set -x' e sem -e/-u/pipefail
+                                      (pode ser combinado com qualquer comando acima)
+
 VARIANTES:
   WINE_VARIANT=staging ./startx.sh     Wine com patches (RECOMENDADO)
   WINE_VARIANT=vanilla ./startx.sh     Wine puro
