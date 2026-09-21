@@ -156,7 +156,7 @@ for arg in "$@"; do
             exit 1
             ;;
         --version)
-            echo "Wine67 v2.1 (StartX portable engine)"
+            echo "Wine67 v2.3"
             exit 0
             ;;
         --status)
