@@ -1,5 +1,5 @@
 #!/bin/bash
-
+# METADE DESSE CODIGO É IA ESTOU CONFESSANDO E USO O CLAUDE CODE PARA ARRUMAR BUGS PQ TENHO UMA VIDA
 set -uo pipefail
 
 cleanup() {
