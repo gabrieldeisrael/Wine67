@@ -11,13 +11,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALL_DIR="$HOME/.cache/wine67"
 WINE_BIN="$INSTALL_DIR/bin/wine"
 
-# PARSING DE FLAGS
-DISABLE_MONO=0
-DISABLE_GECKO=0
-DISABLE_VULKAN=0
+
+ODEIO_MONO=0
+MORTE_AO_GECKO=0
+APAGAR_O_VK=0
 RUN_WINETRICKS=0
-EXE_ARG=""
-UNPREDICTABLE=0
+O_JOGO=""
+MODO_APOSTA=0
 RUN_SHELL=0
 RUN_WINECFG=0
 
@@ -58,7 +58,7 @@ EOF
 
 for arg in "$@"; do
     case "$arg" in
-        --dontdotnet) DISABLE_MONO=1 ;;
+        --dontdotnet) ODEIO_MONO=1 ;;
         --debug) set -x ;;
         --panic) rm -rf "$INSTALL_DIR" && echo "Pânico! Wine removido." && exit 0 ;;
         --igotsudo) 
@@ -73,11 +73,11 @@ for arg in "$@"; do
             RUN_WINETRICKS=1
             ;;
         --unpredictable | --gamble)
-            UNPREDICTABLE=1
+            MODO_APOSTA=1
             set +e
             ;;
-        --dontgecko)  DISABLE_GECKO=1 ;;
-        --dontvulkan) DISABLE_VULKAN=1 ;;
+        --dontgecko)  MORTE_AO_GECKO=1 ;;
+        --dontvulkan) APAGAR_O_VK=1 ;;
         --test)
             echo "Isso é um teste."
             exit 0
@@ -175,37 +175,37 @@ for arg in "$@"; do
                 mostrar_ajuda
                 exit 1
             fi
-            if [[ -n "$EXE_ARG" ]]; then
+            if [[ -n "$O_JOGO" ]]; then
                 printf 'Informe apenas um executável.\n' >&2
                 mostrar_ajuda
                 exit 1
             fi
-            EXE_ARG="$arg"
+            O_JOGO="$arg"
             ;;       
     esac
 done
 
-if (( UNPREDICTABLE )); then
-    for variable in DISABLE_MONO DISABLE_GECKO RUN_WINETRICKS RUN_SHELL RUN_WINECFG; do
+if (( MODO_APOSTA )); then
+    for variable in ODEIO_MONO MORTE_AO_GECKO RUN_WINETRICKS RUN_SHELL RUN_WINECFG; do
         if (( RANDOM % 4 == 0 )); then
             printf -v "$variable" '%d' "$((1 - ${!variable}))"
         fi
     done
 fi 
 
-# CORES
+# isso aqui é cor
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
 CYAN='\033[0;36m'; BOLD='\033[1m'; DIM='\033[2m'; RESET='\033[0m'
 MAGENTA='\033[0;35m'
 
-# FUNÇÕES DE LOG
+# se você é idiota e não entende o codigo abaixo, isso é alguma coisa de logs e to com preguica
 erro()  { echo -e "${RED}❌ $1${RESET}" >&2; exit 1; }
 ok()    { echo -e "${GREEN}✔  $1${RESET}"; }
 info()  { echo -e "${CYAN}➜  $1${RESET}"; }
 aviso() { echo -e "${YELLOW}⚠  $1${RESET}"; }
 
-# Limpar aspas de strings de entrada
-limpar_entrada() {
+# varrer o lixo chamado aspas e espaços do input do usuário
+varre_o_lixo() {
     local entrada="$1"
     entrada="${entrada//\'/}"
     entrada="${entrada//\"/}"
@@ -244,12 +244,12 @@ command -v curl &>/dev/null || erro "Instale o comando 'curl' para continuar."
 command -v tar  &>/dev/null || erro "'tar' não encontrado."
 command -v bash &>/dev/null || erro "'bash' não encontrado."
 
-# Verifica versão do bash (mapfile requer bash >= 4.0)
+# verifica versão do bash (mapfile requer bash >= 4.0)
 (( BASH_VERSINFO[0] >= 4 )) || erro "Bash 4.0 ou superior necessário (versão atual: $BASH_VERSION)"
 
 mkdir -p "$INSTALL_DIR"
 
-# EXIBIR BANNER
+# isso obviamente é um banner
 {
     echo -e "${MAGENTA}${BOLD}"
     echo "  ██╗    ██╗██╗███╗   ██╗███████╗ ██████╗ ███████╗"
@@ -265,10 +265,10 @@ mkdir -p "$INSTALL_DIR"
 }
 
 
-# VERIFICAR ESPAÇO EM DISCO ANTES DE BAIXAR
-verificar_espaco() {
+# verificar o espaco do seu hdd baratinho de 2012 com 128 gb
+ver_o_espaco_do_hdd_barato() {
     local destino="$1"
-    local minimo_mb="${2:-1500}"  # Proton/Wine pode passar de 1 GB
+    local minimo_mb="${2:-1500}"  # wine pode passar de 1 GB
     local disponivel_mb
     mkdir -p "$destino" 2>/dev/null || true
     disponivel_mb=$(df -m "$destino" 2>/dev/null | awk 'NR==2 {print $4}')
@@ -280,7 +280,7 @@ verificar_espaco() {
 baixar() {
     local url="$1" dest="$2" nome="$3"
 
-    verificar_espaco "$(dirname "$dest")"
+    ver_o_espaco_do_hdd_barato "$(dirname "$dest")"
 
     info "Baixando $nome..."
     # -# mostra barra de progresso no terminal
@@ -289,7 +289,7 @@ baixar() {
         erro "Falha ao baixar $nome. Verifique sua conexão."
     fi
 
-    # Checa se o servidor não retornou uma pagina de erro HTML
+    # checa se o servidor não retornou uma pagina de erro HTML (o que seria triste)
     if command -v file &>/dev/null && file "$dest" 2>/dev/null | grep -qi "HTML\|ASCII text"; then
         rm -f "$dest"
         erro "Servidor retornou erro ao baixar $nome (resposta não é um arquivo válido)."
@@ -298,7 +298,7 @@ baixar() {
     ok "Download concluído: $(du -h "$dest" | cut -f1)"
 }
 
-# BUSCAR .TAR LOCAL (pendrive, pasta do script, etc)
+# achar o tar correto
 buscar_tar() {
     local padroes=("wine-*-amd64-wow64.tar.xz" "wine-*.tar.xz" "wine-*.tar.gz" "wine-*.tar")
     local resultado
@@ -307,14 +307,14 @@ buscar_tar() {
         resultado=$(find "$SCRIPT_DIR" -maxdepth 3 -name "$padrao" -type f -print -quit 2>/dev/null)
         [[ -n "$resultado" ]] && echo "$resultado" && return 0
         
-        # Busca em drives/mídia com menor profundidade
+        # interprete voce mesmo o que isso faz, mas basicamente procura em /media, /run/media e /mnt tambem
         resultado=$(find /media /run/media /mnt -maxdepth 3 -name "$padrao" -type f -print -quit 2>/dev/null)
         [[ -n "$resultado" ]] && echo "$resultado" && return 0
     done
     return 1
 }
 
-# INSTALAR WINE
+# tá literalmente no nome da variavel, mas é a função que instala o wine
 instalar_wine() {
     info "Instalando Wine Kron4ek wow64..."
     local GE_TAR
@@ -348,7 +348,7 @@ instalar_wine() {
     spinner "$tar_pid" "Extraindo Wine (pode demorar)..."
     wait "$tar_pid" || erro "Falha ao extrair. Delete '$INSTALL_DIR' e tente novamente."
 
-    # Otimização: usar find com -print0 e xargs para chmod eficiente
+
     find "$INSTALL_DIR/bin" -type f -print0 2>/dev/null | xargs -0 chmod +x 2>/dev/null
     
     if [[ ! -f "$WINE_BIN" ]]; then
@@ -369,16 +369,16 @@ detectar_unity() {
     local exe_dir
     exe_dir="$(dirname "$1")"
     
-    # Primeiro tenta encontrar UnityPlayer.dll diretamente
+    # primeiro tenta encontrar UnityPlayer.dll diretamente
     [[ -f "$exe_dir/UnityPlayer.dll" ]] && return 0
     
-    # Depois verifica por pastas _Data típicas do Unity
+    # depois verifica por pastas _Data típicas do Unity
     find "$exe_dir" -maxdepth 1 -type d -name "*_Data" -print -quit 2>/dev/null | grep -q . && return 0
     
     return 1
 }
 
-# INSTALAÇÃO
+# de novo autoexplicativo, mas instala o wine se não estiver presente
 if [[ ! -f "$WINE_BIN" ]]; then
     instalar_wine
 fi
@@ -388,13 +388,13 @@ fi
 ok "Wine: $WINE_BIN"
 ok "Versão: $("$WINE_BIN" --version 2>/dev/null || echo 'desconhecida')"
 
-# VARIÁVEIS DE AMBIENTE
+# VARIÁVEIS DE AMBIENTE (esse fiz questao de botar em caixa alta pra voce ver que é importante)
 export LD_LIBRARY_PATH="$INSTALL_DIR/lib:$INSTALL_DIR/lib64:${LD_LIBRARY_PATH:-}"
 export PATH="$INSTALL_DIR/bin:$PATH"
 export WINELOADER="$WINE_BIN"
 export WINESERVER="$INSTALL_DIR/bin/wineserver"
 
-# Compatibilidade com wayland
+# para ter wayland
 if [ "$XDG_SESSION_TYPE" = "wayland" ]; then
     export GDK_BACKEND=x11
     export QT_QPA_PLATFORM=xcb
@@ -402,7 +402,7 @@ fi
 
 [ -z "${DISPLAY:-}" ] && export DISPLAY=:0
 
-# Esync/Fsync se o kernel suportar
+# Esync/Fsync se o kernel suportar (porque amamos fps alto)
 if grep -qw "futex_waitv" /proc/kallsyms 2>/dev/null || [ -e /dev/futex-waitv ]; then
     export WINEESYNC=1
     export WINEFSYNC=1
@@ -410,22 +410,22 @@ else
     export WINE_DISABLE_FAST_SYNC=1
 fi
 
-WINEDLLOVERRIDES_BASE="uiautomationcore=d;oleacc=d;tabtip.exe=d;winemenubuilder=d;rpcss=n;midimap=n;steam_api=b,n"
-(( DISABLE_MONO == 1 ))  && WINEDLLOVERRIDES_BASE+=";mscoree=d"
-(( DISABLE_GECKO == 1 )) && WINEDLLOVERRIDES_BASE+=";mshtml=d"
-export WINEDLLOVERRIDES="$WINEDLLOVERRIDES_BASE"
+MODO_GAMBIARRA="uiautomationcore=d;oleacc=d;tabtip.exe=d;winemenubuilder=d;rpcss=n;midimap=n;steam_api=b,n"
+(( ODEIO_MONO == 1 ))  && MODO_GAMBIARRA+=";mscoree=d"
+(( MORTE_AO_GECKO == 1 )) && MODO_GAMBIARRA+=";mshtml=d"
+export WINEDLLOVERRIDES="$MODO_GAMBIARRA"
 export NO_AT_BRIDGE=1
 export QT_ACCESSIBILITY=0
 
 
 
-# Otimizações de driver
+# otimizações de driver genéricas
 export mesa_glthread=true
 export __GL_THREADED_OPTIMIZATIONS=1
 
-# DXVK (Performance Gráfica) - Check automático
+# DXVK
 instalar_dxvk() {
-    if (( DISABLE_VULKAN == 1 )); then
+    if (( APAGAR_O_VK == 1 )); then
         echo "DXVK desativado via flag --dontvulkan."
         return
     fi
@@ -445,7 +445,7 @@ instalar_dxvk() {
 }
 instalar_dxvk
 
-# ABRIR WINETRICKS
+# abre o winetricks se vc quiser
 if (( RUN_WINETRICKS == 1 )); then
     command -v winetricks &>/dev/null || erro "Instale o 'winetricks' para continuar."
     export WINEPREFIX="$INSTALL_DIR/prefixes/winetricks"
@@ -454,15 +454,15 @@ if (( RUN_WINETRICKS == 1 )); then
 fi
 
 
-# BUSCAR JOGOS (.EXE)
+# acha exes
 echo ""
 
 declare -a EXES
 SELECTED=""
 
-# MODO DIRETO: se um caminho de .exe foi passado como argumento, pula a busca/prompt
-if [[ -n "$EXE_ARG" ]]; then
-    SELECTED="$(limpar_entrada "$EXE_ARG")"
+# se voce passou um exe como argumento, ele funciona por conta disso: magia do terry davis ou algo do tipo.
+if [[ -n "$O_JOGO" ]]; then
+    SELECTED="$(varre_o_lixo "$O_JOGO")"
     [[ -f "$SELECTED" ]] || erro "Arquivo não encontrado: '$SELECTED'"
     ok "Modo direto: $(basename "$SELECTED")"
 else
@@ -473,7 +473,7 @@ else
         echo ""
         echo -ne "  ${YELLOW}Nenhum .exe encontrado. Digite o caminho: ${RESET}"
         read -r SELECTED
-        SELECTED=$(limpar_entrada "$SELECTED")
+        SELECTED=$(varre_o_lixo "$SELECTED")
         [[ -f "$SELECTED" ]] || erro "Arquivo não encontrado: '$SELECTED'"
     else
         echo ""
@@ -492,7 +492,7 @@ else
         if [[ "$CHOICE" == "0" ]]; then
             echo -ne "  Caminho: "
             read -r SELECTED
-            SELECTED=$(limpar_entrada "$SELECTED")
+            SELECTED=$(varre_o_lixo "$SELECTED")
         elif [[ "$CHOICE" =~ ^[0-9]+$ ]] && (( CHOICE >= 1 && CHOICE <= ${#EXES[@]} )); then
             SELECTED="${EXES[$((CHOICE-1))]}"
         else
@@ -518,7 +518,6 @@ if [[ ! -f "$WINEPREFIX/system.reg" ]]; then
         erro "Falha ao inicializar o prefixo Wine."
     fi
 fi
-#RUN_WINECFG e RUN_SHELL para abrir winecfg ou shell do prefixo.
 if (( RUN_SHELL == 1 )); then
     info "Abrindo shell do prefixo Wine..."
     exec "$WINE_BIN" cmd
@@ -537,7 +536,7 @@ if detectar_unity "$SELECTED"; then
     wine_args+=("-force-d3d11" "-nolog")
 fi
 
-# Configura áudio via PipeWire/PulseAudio
+# configura audio porque o linux é rebelde e não gosta de coisas que funcionam direito
 
 if command -v pactl >/dev/null 2>&1; then
     PULSE_SOCKET=$(pactl info 2>/dev/null | awk '/Server String/ {print $3}')
@@ -556,7 +555,7 @@ echo ""
 }
 echo ""
 
-# EXECUTAR - Usar array para argumentos seguros
+
 WINEARCH=win64 "$WINE_BIN" "${wine_args[@]}"
 
 EXIT=$?
