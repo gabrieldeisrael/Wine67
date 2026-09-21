@@ -2,6 +2,11 @@
 
 set -uo pipefail
 
+cleanup() {
+    jobs -p | xargs -r kill 2>/dev/null || true
+}
+trap cleanup EXIT INT TERM
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALL_DIR="$HOME/.cache/wine67"
 WINE_BIN="$INSTALL_DIR/bin/wine"
@@ -265,6 +270,7 @@ verificar_espaco() {
     local destino="$1"
     local minimo_mb="${2:-1500}"  # Proton/Wine pode passar de 1 GB
     local disponivel_mb
+    mkdir -p "$destino" 2>/dev/null || true
     disponivel_mb=$(df -m "$destino" 2>/dev/null | awk 'NR==2 {print $4}')
     if [ -n "$disponivel_mb" ] && [ "$disponivel_mb" -lt "$minimo_mb" ]; then
         erro "Espaço insuficiente em disco: ${disponivel_mb}MB disponíveis, mínimo ${minimo_mb}MB necessários."

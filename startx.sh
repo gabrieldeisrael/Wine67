@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+cleanup() {
+    jobs -p | xargs -r kill 2>/dev/null || true
+}
+trap cleanup EXIT INT TERM
+
 # Verifica se o usuário passou a flag --debug (em qualquer posição) e a
 # remove da lista de argumentos, para não atrapalhar o resto do parsing.
 DEBUG_MODE=0
