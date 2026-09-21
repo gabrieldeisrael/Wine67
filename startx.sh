@@ -407,6 +407,7 @@ USO:
   ./startx.sh --winecfg                Configurador Wine
   ./startx.sh --shell                  Shell Wine
   ./startx.sh --ajuda                  Esta mensagem
+  ./startx.sh --status                 Mostra status dos componentes (Experimental)
   ./startx.sh --remover                Remover o Wine
   ./startx.sh --debug [...]            Roda com 'set -x' e sem -e/-u/pipefail
                                       (pode ser combinado com qualquer comando acima)
@@ -472,6 +473,29 @@ case "${1:-}" in
     export WINEARCH=win64
     export PATH="$WINE_DIR/bin:$PATH"
     exec "${SHELL:-bash}"
+    ;;
+  --status)
+    echo "Diretório Base (Experimental): $BASE_DIR"
+    if wine_installed; then
+      echo "Status do Wine: Instalado ($WINE_DIR/bin/wine)"
+      "$WINE_DIR/bin/wine" --version 2>/dev/null || true
+    else
+      echo "Status do Wine: Não instalado"
+    fi
+    if dxvk_installed; then
+      echo "Status do DXVK: Instalado"
+    else
+      echo "Status do DXVK: Não instalado"
+    fi
+    if vkd3d_installed; then
+      echo "Status do VKD3D: Instalado"
+    else
+      echo "Status do VKD3D: Não instalado"
+    fi
+    if [ -d "$BASE_DIR" ]; then
+      echo "Espaço ocupado no cache local: $(du -sh "$BASE_DIR" 2>/dev/null | cut -f1)"
+    fi
+    exit 0
     ;;
   --lista|--list)
     install_wine
