@@ -38,6 +38,7 @@ VKD3D_DIR="$BASE_DIR/vkd3d"
 
 WINE_VARIANT="${WINE_VARIANT:-staging}"
 ENABLE_DXVK="${ENABLE_DXVK:-1}"
+ENABLE_GALLIUM11="${ENABLE_GALLIUM11:-0}"
 ENABLE_VKD3D="${ENABLE_VKD3D:-1}"
 DXVK_VERSION="${DXVK_VERSION:-latest}"
 
@@ -242,6 +243,18 @@ setup_vulkan_prefix() {
     return 0
   fi
 
+  if [ "$ENABLE_GALLIUM11" = "1" ]; then
+    log "Configurando backend Gallium Eleven para D3D11/DXGI (Mesa/Crocus)..."
+    export GALLIUM_DRIVER=crocus
+    export MESA_LOADER_DRIVER_OVERRIDE=crocus
+    export LIBGL_ALWAYS_SOFTWARE=0
+    mkdir -p "$PREFIX_DIR/drive_c/windows/system32" "$PREFIX_DIR/drive_c/windows/syswow64"
+    for dll in d3d11 dxgi; do
+      [ -f "$SCRIPT_DIR/gallium11/build/$dll.dll" ] && cp "$SCRIPT_DIR/gallium11/build/$dll.dll" "$PREFIX_DIR/drive_c/windows/system32/" 2>/dev/null || true
+    done
+    return 0
+  fi
+
   log "Configurando renderização Vulkan..."
   
   mkdir -p "$PREFIX_DIR/drive_c/windows/system32" "$PREFIX_DIR/drive_c/windows/syswow64"
@@ -419,6 +432,7 @@ VARIANTES:
 RENDERIZAÇÃO VULKAN:
   ENABLE_DXVK=1 ./startx.sh            D3D9/D3D10/D3D11 → Vulkan (padrão)
   ENABLE_VKD3D=1 ./startx.sh           D3D12 → Vulkan (padrão)
+  ENABLE_GALLIUM11=1 ./startx.sh       D3D11/DXGI → Mesa NIR / Gallium3D (Crocus)
   
 CORREÇÕES:
   ✓ GL_INVALID_OPERATION (OpenGL) - RESOLVIDO (usa Vulkan)

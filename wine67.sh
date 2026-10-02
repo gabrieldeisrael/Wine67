@@ -21,6 +21,7 @@ O_JOGO=""
 MODO_APOSTA=0
 RUN_SHELL=0
 RUN_WINECFG=0
+GALLIUM11_MODE=0
 
 mostrar_ajuda() {
         cat <<'EOF'
@@ -33,6 +34,7 @@ Opções:
     --dontdotnet       Desativa o Wine Mono.
     --dontgecko        Desativa o Wine Gecko.
     --dontvulkan       Desativa o uso do DXVK (força wined3d).
+    --gallium11        Ativa o Gallium Eleven (D3D11/DXGI direto para Gallium3D/Mesa NIR).
     --help, -?         Mostra esta ajuda e sai.
     --why              Não ouse.
     --lol              HAHAHAHAHAHAAHAHA.
@@ -79,6 +81,7 @@ for arg in "$@"; do
             ;;
         --dontgecko)  MORTE_AO_GECKO=1 ;;
         --dontvulkan) APAGAR_O_VK=1 ;;
+        --gallium11)  GALLIUM11_MODE=1 ;;
         --test)
             echo "Isso é um teste."
             exit 0
@@ -425,6 +428,19 @@ export mesa_glthread=true
 export __GL_THREADED_OPTIMIZATIONS=1
 
 # DXVK
+ativar_gallium11() {
+    if (( GALLIUM11_MODE == 1 )); then
+        echo "Ativando o backend Gallium Eleven (D3D11/DXGI direto para Mesa/Crocus)..."
+        APAGAR_O_VK=1
+        export GALLIUM_DRIVER=crocus
+        export MESA_LOADER_DRIVER_OVERRIDE=crocus
+        export LIBGL_ALWAYS_SOFTWARE=0
+        export WINEPATH="$SCRIPT_DIR/gallium11/build;$WINEPATH"
+        export WINEDLLOVERRIDES="d3d11=n;dxgi=n;$WINEDLLOVERRIDES"
+    fi
+}
+ativar_gallium11
+
 instalar_dxvk() {
     if (( APAGAR_O_VK == 1 )); then
         echo "DXVK desativado via flag --dontvulkan."
