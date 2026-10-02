@@ -1,0 +1,110 @@
+[
+  {
+    "directory": "C:\\Users\\berna\\Downloads\\gallium11\\build",
+    "command": "\"cc\" \"-Ilibd3d11.dll.p\" \"-I.\" \"-I..\" \"-I..\\include\" \"-fdiagnostics-color=always\" \"-D_FILE_OFFSET_BITS=64\" \"-Wall\" \"-Winvalid-pch\" \"-Wextra\" \"-std=gnu11\" \"-O3\" -MD -MQ libd3d11.dll.p/src_gallium_mgr.c.obj -MF \"libd3d11.dll.p\\src_gallium_mgr.c.obj.d\" -o libd3d11.dll.p/src_gallium_mgr.c.obj \"-c\" ../src/gallium_mgr.c",
+    "file": "../src/gallium_mgr.c",
+    "output": "libd3d11.dll.p/src_gallium_mgr.c.obj"
+  },
+  {
+    "directory": "C:\\Users\\berna\\Downloads\\gallium11\\build",
+    "command": "\"cc\" \"-Ilibd3d11.dll.p\" \"-I.\" \"-I..\" \"-I..\\include\" \"-fdiagnostics-color=always\" \"-D_FILE_OFFSET_BITS=64\" \"-Wall\" \"-Winvalid-pch\" \"-Wextra\" \"-std=gnu11\" \"-O3\" -MD -MQ libd3d11.dll.p/src_parser_dxbc_parser.c.obj -MF \"libd3d11.dll.p\\src_parser_dxbc_parser.c.obj.d\" -o libd3d11.dll.p/src_parser_dxbc_parser.c.obj \"-c\" ../src/parser/dxbc_parser.c",
+    "file": "../src/parser/dxbc_parser.c",
+    "output": "libd3d11.dll.p/src_parser_dxbc_parser.c.obj"
+  },
+  {
+    "directory": "C:\\Users\\berna\\Downloads\\gallium11\\build",
+    "command": "\"cc\" \"-Ilibd3d11.dll.p\" \"-I.\" \"-I..\" \"-I..\\include\" \"-fdiagnostics-color=always\" \"-D_FILE_OFFSET_BITS=64\" \"-Wall\" \"-Winvalid-pch\" \"-Wextra\" \"-std=gnu11\" \"-O3\" -MD -MQ libd3d11.dll.p/src_parser_obj_parser.c.obj -MF \"libd3d11.dll.p\\src_parser_obj_parser.c.obj.d\" -o libd3d11.dll.p/src_parser_obj_parser.c.obj \"-c\" ../src/parser/obj_parser.c",
+    "file": "../src/parser/obj_parser.c",
+    "output": "libd3d11.dll.p/src_parser_obj_parser.c.obj"
+  },
+  {
+    "directory": "C:\\Users\\berna\\Downloads\\gallium11\\build",
+    "command": "\"cc\" \"-Ilibd3d11.dll.p\" \"-I.\" \"-I..\" \"-I..\\include\" \"-fdiagnostics-color=always\" \"-D_FILE_OFFSET_BITS=64\" \"-Wall\" \"-Winvalid-pch\" \"-Wextra\" \"-std=gnu11\" \"-O3\" -MD -MQ libd3d11.dll.p/src_shader_parser.c.obj -MF \"libd3d11.dll.p\\src_shader_parser.c.obj.d\" -o libd3d11.dll.p/src_shader_parser.c.obj \"-c\" ../src/shader_parser.c",
+    "file": "../src/shader_parser.c",
+    "output": "libd3d11.dll.p/src_shader_parser.c.obj"
+  },
+  {
+    "directory": "C:\\Users\\berna\\Downloads\\gallium11\\build",
+    "command": "\"cc\" \"-Ilibd3d11.dll.p\" \"-I.\" \"-I..\" \"-I..\\include\" \"-fdiagnostics-color=always\" \"-D_FILE_OFFSET_BITS=64\" \"-Wall\" \"-Winvalid-pch\" \"-Wextra\" \"-std=gnu11\" \"-O3\" -MD -MQ libd3d11.dll.p/src_pipe_loader_stub.c.obj -MF \"libd3d11.dll.p\\src_pipe_loader_stub.c.obj.d\" -o libd3d11.dll.p/src_pipe_loader_stub.c.obj \"-c\" ../src/pipe_loader_stub.c",
+    "file": "../src/pipe_loader_stub.c",
+    "output": "libd3d11.dll.p/src_pipe_loader_stub.c.obj"
+  },
+  {
+    "directory": "C:\\Users\\berna\\Downloads\\gallium11\\build",
+    "command": "\"cc\" \"-Ilibd3d11.dll.p\" \"-I.\" \"-I..\" \"-I..\\include\" \"-fdiagnostics-color=always\" \"-D_FILE_OFFSET_BITS=64\" \"-Wall\" \"-Winvalid-pch\" \"-Wextra\" \"-std=gnu11\" \"-O3\" -MD -MQ libd3d11.dll.p/src_d3d11_d3d11_stubs.c.obj -MF \"libd3d11.dll.p\\src_d3d11_d3d11_stubs.c.obj.d\" -o libd3d11.dll.p/src_d3d11_d3d11_stubs.c.obj \"-c\" ../src/d3d11/d3d11_stubs.c",
+    "file": "../src/d3d11/d3d11_stubs.c",
+    "output": "libd3d11.dll.p/src_d3d11_d3d11_stubs.c.obj"
+  },
+  {
+    "directory": "C:\\Users\\berna\\Downloads\\gallium11\\build",
+    "command": "\"cc\" \"-Ilibdxgi.dll.p\" \"-I.\" \"-I..\" \"-I..\\include\" \"-fdiagnostics-color=always\" \"-D_FILE_OFFSET_BITS=64\" \"-Wall\" \"-Winvalid-pch\" \"-Wextra\" \"-std=gnu11\" \"-O3\" -MD -MQ libdxgi.dll.p/src_gallium_mgr.c.obj -MF \"libdxgi.dll.p\\src_gallium_mgr.c.obj.d\" -o libdxgi.dll.p/src_gallium_mgr.c.obj \"-c\" ../src/gallium_mgr.c",
+    "file": "../src/gallium_mgr.c",
+    "output": "libdxgi.dll.p/src_gallium_mgr.c.obj"
+  },
+  {
+    "directory": "C:\\Users\\berna\\Downloads\\gallium11\\build",
+    "command": "\"cc\" \"-Ilibdxgi.dll.p\" \"-I.\" \"-I..\" \"-I..\\include\" \"-fdiagnostics-color=always\" \"-D_FILE_OFFSET_BITS=64\" \"-Wall\" \"-Winvalid-pch\" \"-Wextra\" \"-std=gnu11\" \"-O3\" -MD -MQ libdxgi.dll.p/src_parser_dxbc_parser.c.obj -MF \"libdxgi.dll.p\\src_parser_dxbc_parser.c.obj.d\" -o libdxgi.dll.p/src_parser_dxbc_parser.c.obj \"-c\" ../src/parser/dxbc_parser.c",
+    "file": "../src/parser/dxbc_parser.c",
+    "output": "libdxgi.dll.p/src_parser_dxbc_parser.c.obj"
+  },
+  {
+    "directory": "C:\\Users\\berna\\Downloads\\gallium11\\build",
+    "command": "\"cc\" \"-Ilibdxgi.dll.p\" \"-I.\" \"-I..\" \"-I..\\include\" \"-fdiagnostics-color=always\" \"-D_FILE_OFFSET_BITS=64\" \"-Wall\" \"-Winvalid-pch\" \"-Wextra\" \"-std=gnu11\" \"-O3\" -MD -MQ libdxgi.dll.p/src_parser_obj_parser.c.obj -MF \"libdxgi.dll.p\\src_parser_obj_parser.c.obj.d\" -o libdxgi.dll.p/src_parser_obj_parser.c.obj \"-c\" ../src/parser/obj_parser.c",
+    "file": "../src/parser/obj_parser.c",
+    "output": "libdxgi.dll.p/src_parser_obj_parser.c.obj"
+  },
+  {
+    "directory": "C:\\Users\\berna\\Downloads\\gallium11\\build",
+    "command": "\"cc\" \"-Ilibdxgi.dll.p\" \"-I.\" \"-I..\" \"-I..\\include\" \"-fdiagnostics-color=always\" \"-D_FILE_OFFSET_BITS=64\" \"-Wall\" \"-Winvalid-pch\" \"-Wextra\" \"-std=gnu11\" \"-O3\" -MD -MQ libdxgi.dll.p/src_shader_parser.c.obj -MF \"libdxgi.dll.p\\src_shader_parser.c.obj.d\" -o libdxgi.dll.p/src_shader_parser.c.obj \"-c\" ../src/shader_parser.c",
+    "file": "../src/shader_parser.c",
+    "output": "libdxgi.dll.p/src_shader_parser.c.obj"
+  },
+  {
+    "directory": "C:\\Users\\berna\\Downloads\\gallium11\\build",
+    "command": "\"cc\" \"-Ilibdxgi.dll.p\" \"-I.\" \"-I..\" \"-I..\\include\" \"-fdiagnostics-color=always\" \"-D_FILE_OFFSET_BITS=64\" \"-Wall\" \"-Winvalid-pch\" \"-Wextra\" \"-std=gnu11\" \"-O3\" -MD -MQ libdxgi.dll.p/src_pipe_loader_stub.c.obj -MF \"libdxgi.dll.p\\src_pipe_loader_stub.c.obj.d\" -o libdxgi.dll.p/src_pipe_loader_stub.c.obj \"-c\" ../src/pipe_loader_stub.c",
+    "file": "../src/pipe_loader_stub.c",
+    "output": "libdxgi.dll.p/src_pipe_loader_stub.c.obj"
+  },
+  {
+    "directory": "C:\\Users\\berna\\Downloads\\gallium11\\build",
+    "command": "\"cc\" \"-Ilibdxgi.dll.p\" \"-I.\" \"-I..\" \"-I..\\include\" \"-fdiagnostics-color=always\" \"-D_FILE_OFFSET_BITS=64\" \"-Wall\" \"-Winvalid-pch\" \"-Wextra\" \"-std=gnu11\" \"-O3\" -MD -MQ libdxgi.dll.p/src_dxgi_dxgi_stubs.c.obj -MF \"libdxgi.dll.p\\src_dxgi_dxgi_stubs.c.obj.d\" -o libdxgi.dll.p/src_dxgi_dxgi_stubs.c.obj \"-c\" ../src/dxgi/dxgi_stubs.c",
+    "file": "../src/dxgi/dxgi_stubs.c",
+    "output": "libdxgi.dll.p/src_dxgi_dxgi_stubs.c.obj"
+  },
+  {
+    "directory": "C:\\Users\\berna\\Downloads\\gallium11\\build",
+    "command": "\"cc\" \"-Icube_test.exe.p\" \"-I.\" \"-I..\" \"-I..\\include\" \"-fdiagnostics-color=always\" \"-D_FILE_OFFSET_BITS=64\" \"-Wall\" \"-Winvalid-pch\" \"-Wextra\" \"-std=gnu11\" \"-O3\" -MD -MQ cube_test.exe.p/src_main.c.obj -MF \"cube_test.exe.p\\src_main.c.obj.d\" -o cube_test.exe.p/src_main.c.obj \"-c\" ../src/main.c",
+    "file": "../src/main.c",
+    "output": "cube_test.exe.p/src_main.c.obj"
+  },
+  {
+    "directory": "C:\\Users\\berna\\Downloads\\gallium11\\build",
+    "command": "\"cc\" \"-Icube_test.exe.p\" \"-I.\" \"-I..\" \"-I..\\include\" \"-fdiagnostics-color=always\" \"-D_FILE_OFFSET_BITS=64\" \"-Wall\" \"-Winvalid-pch\" \"-Wextra\" \"-std=gnu11\" \"-O3\" -MD -MQ cube_test.exe.p/src_gallium_mgr.c.obj -MF \"cube_test.exe.p\\src_gallium_mgr.c.obj.d\" -o cube_test.exe.p/src_gallium_mgr.c.obj \"-c\" ../src/gallium_mgr.c",
+    "file": "../src/gallium_mgr.c",
+    "output": "cube_test.exe.p/src_gallium_mgr.c.obj"
+  },
+  {
+    "directory": "C:\\Users\\berna\\Downloads\\gallium11\\build",
+    "command": "\"cc\" \"-Icube_test.exe.p\" \"-I.\" \"-I..\" \"-I..\\include\" \"-fdiagnostics-color=always\" \"-D_FILE_OFFSET_BITS=64\" \"-Wall\" \"-Winvalid-pch\" \"-Wextra\" \"-std=gnu11\" \"-O3\" -MD -MQ cube_test.exe.p/src_parser_dxbc_parser.c.obj -MF \"cube_test.exe.p\\src_parser_dxbc_parser.c.obj.d\" -o cube_test.exe.p/src_parser_dxbc_parser.c.obj \"-c\" ../src/parser/dxbc_parser.c",
+    "file": "../src/parser/dxbc_parser.c",
+    "output": "cube_test.exe.p/src_parser_dxbc_parser.c.obj"
+  },
+  {
+    "directory": "C:\\Users\\berna\\Downloads\\gallium11\\build",
+    "command": "\"cc\" \"-Icube_test.exe.p\" \"-I.\" \"-I..\" \"-I..\\include\" \"-fdiagnostics-color=always\" \"-D_FILE_OFFSET_BITS=64\" \"-Wall\" \"-Winvalid-pch\" \"-Wextra\" \"-std=gnu11\" \"-O3\" -MD -MQ cube_test.exe.p/src_parser_obj_parser.c.obj -MF \"cube_test.exe.p\\src_parser_obj_parser.c.obj.d\" -o cube_test.exe.p/src_parser_obj_parser.c.obj \"-c\" ../src/parser/obj_parser.c",
+    "file": "../src/parser/obj_parser.c",
+    "output": "cube_test.exe.p/src_parser_obj_parser.c.obj"
+  },
+  {
+    "directory": "C:\\Users\\berna\\Downloads\\gallium11\\build",
+    "command": "\"cc\" \"-Icube_test.exe.p\" \"-I.\" \"-I..\" \"-I..\\include\" \"-fdiagnostics-color=always\" \"-D_FILE_OFFSET_BITS=64\" \"-Wall\" \"-Winvalid-pch\" \"-Wextra\" \"-std=gnu11\" \"-O3\" -MD -MQ cube_test.exe.p/src_shader_parser.c.obj -MF \"cube_test.exe.p\\src_shader_parser.c.obj.d\" -o cube_test.exe.p/src_shader_parser.c.obj \"-c\" ../src/shader_parser.c",
+    "file": "../src/shader_parser.c",
+    "output": "cube_test.exe.p/src_shader_parser.c.obj"
+  },
+  {
+    "directory": "C:\\Users\\berna\\Downloads\\gallium11\\build",
+    "command": "\"cc\" \"-Icube_test.exe.p\" \"-I.\" \"-I..\" \"-I..\\include\" \"-fdiagnostics-color=always\" \"-D_FILE_OFFSET_BITS=64\" \"-Wall\" \"-Winvalid-pch\" \"-Wextra\" \"-std=gnu11\" \"-O3\" -MD -MQ cube_test.exe.p/src_pipe_loader_stub.c.obj -MF \"cube_test.exe.p\\src_pipe_loader_stub.c.obj.d\" -o cube_test.exe.p/src_pipe_loader_stub.c.obj \"-c\" ../src/pipe_loader_stub.c",
+    "file": "../src/pipe_loader_stub.c",
+    "output": "cube_test.exe.p/src_pipe_loader_stub.c.obj"
+  }
+]

@@ -1,0 +1,19 @@
+Regras inegociáveis para esta tarefa:
+
+    Proibido desativar a aceleração por hardware (GPU / Gallium3D / Crocus).
+
+    Proibido criar código de rasterização em C no CPU.
+
+Memória 
+
+   
+    Não execute comandos perigosos no Windows, todo e qualquer comando você vai executar no SSH. A menos que seja para pegar um arquivo na pasta onde está rodando ou compilar ou mexer com o código.
+
+    Sempre que quiser, pode liberar os subagentes.
+    
+    Ação primeiro. Se eu dizer que não tem vídeo, arrume o vídeo.
+
+    Sempre rode um subagente para ver se as regras inegociáveis estão de acordo.
+
+
+    

@@ -1,0 +1,239 @@
+[
+  {
+    "name": "d3d11",
+    "id": "d3d11@sha",
+    "type": "shared library",
+    "defined_in": "C:\\Users\\berna\\Downloads\\gallium11\\meson.build",
+    "filename": [
+      "C:\\Users\\berna\\Downloads\\gallium11\\build\\libd3d11.dll"
+    ],
+    "build_by_default": true,
+    "target_sources": [
+      {
+        "language": "c",
+        "machine": "host",
+        "compiler": [
+          "cc"
+        ],
+        "parameters": [
+          "-IC:\\Users\\berna\\Downloads\\gallium11\\build\\libd3d11.dll.p",
+          "-IC:\\Users\\berna\\Downloads\\gallium11\\build",
+          "-IC:\\Users\\berna\\Downloads\\gallium11",
+          "-IC:\\Users\\berna\\Downloads\\gallium11\\include",
+          "-fdiagnostics-color=always",
+          "-D_FILE_OFFSET_BITS=64",
+          "-Wall",
+          "-Winvalid-pch",
+          "-Wextra",
+          "-std=gnu11",
+          "-O3"
+        ],
+        "sources": [
+          "C:\\Users\\berna\\Downloads\\gallium11\\src\\gallium_mgr.c",
+          "C:\\Users\\berna\\Downloads\\gallium11\\src\\parser\\dxbc_parser.c",
+          "C:\\Users\\berna\\Downloads\\gallium11\\src\\parser\\obj_parser.c",
+          "C:\\Users\\berna\\Downloads\\gallium11\\src\\shader_parser.c",
+          "C:\\Users\\berna\\Downloads\\gallium11\\src\\pipe_loader_stub.c",
+          "C:\\Users\\berna\\Downloads\\gallium11\\src\\d3d11\\d3d11_stubs.c"
+        ],
+        "generated_sources": [],
+        "unity_sources": []
+      },
+      {
+        "linker": [
+          "cc"
+        ],
+        "parameters": [
+          "-Wl,--allow-shlib-undefined",
+          "-Wl,-O1",
+          "-shared",
+          "-Wl,--start-group",
+          "-Wl,--start-group",
+          "-Wl,--out-implib=libd3d11.dll.a",
+          "-Wl,--subsystem,console",
+          "-lkernel32",
+          "-luser32",
+          "-lgdi32",
+          "-lwinspool",
+          "-lshell32",
+          "-lole32",
+          "-loleaut32",
+          "-luuid",
+          "-lcomdlg32",
+          "-ladvapi32",
+          "-Wl,--end-group",
+          "-Wl,--end-group"
+        ]
+      }
+    ],
+    "extra_files": [],
+    "subproject": null,
+    "dependencies": [
+      "libdrm",
+      "gbm"
+    ],
+    "depends": [],
+    "win_subsystem": "console",
+    "installed": true,
+    "install_filename": [
+      "c:\\bin\\libd3d11.dll"
+    ]
+  },
+  {
+    "name": "dxgi",
+    "id": "dxgi@sha",
+    "type": "shared library",
+    "defined_in": "C:\\Users\\berna\\Downloads\\gallium11\\meson.build",
+    "filename": [
+      "C:\\Users\\berna\\Downloads\\gallium11\\build\\libdxgi.dll"
+    ],
+    "build_by_default": true,
+    "target_sources": [
+      {
+        "language": "c",
+        "machine": "host",
+        "compiler": [
+          "cc"
+        ],
+        "parameters": [
+          "-IC:\\Users\\berna\\Downloads\\gallium11\\build\\libdxgi.dll.p",
+          "-IC:\\Users\\berna\\Downloads\\gallium11\\build",
+          "-IC:\\Users\\berna\\Downloads\\gallium11",
+          "-IC:\\Users\\berna\\Downloads\\gallium11\\include",
+          "-fdiagnostics-color=always",
+          "-D_FILE_OFFSET_BITS=64",
+          "-Wall",
+          "-Winvalid-pch",
+          "-Wextra",
+          "-std=gnu11",
+          "-O3"
+        ],
+        "sources": [
+          "C:\\Users\\berna\\Downloads\\gallium11\\src\\gallium_mgr.c",
+          "C:\\Users\\berna\\Downloads\\gallium11\\src\\parser\\dxbc_parser.c",
+          "C:\\Users\\berna\\Downloads\\gallium11\\src\\parser\\obj_parser.c",
+          "C:\\Users\\berna\\Downloads\\gallium11\\src\\shader_parser.c",
+          "C:\\Users\\berna\\Downloads\\gallium11\\src\\pipe_loader_stub.c",
+          "C:\\Users\\berna\\Downloads\\gallium11\\src\\dxgi\\dxgi_stubs.c"
+        ],
+        "generated_sources": [],
+        "unity_sources": []
+      },
+      {
+        "linker": [
+          "cc"
+        ],
+        "parameters": [
+          "-Wl,--allow-shlib-undefined",
+          "-Wl,-O1",
+          "-shared",
+          "-Wl,--start-group",
+          "-Wl,--start-group",
+          "-Wl,--out-implib=libdxgi.dll.a",
+          "-Wl,--subsystem,console",
+          "-lkernel32",
+          "-luser32",
+          "-lgdi32",
+          "-lwinspool",
+          "-lshell32",
+          "-lole32",
+          "-loleaut32",
+          "-luuid",
+          "-lcomdlg32",
+          "-ladvapi32",
+          "-Wl,--end-group",
+          "-Wl,--end-group"
+        ]
+      }
+    ],
+    "extra_files": [],
+    "subproject": null,
+    "dependencies": [
+      "libdrm",
+      "gbm"
+    ],
+    "depends": [],
+    "win_subsystem": "console",
+    "installed": true,
+    "install_filename": [
+      "c:\\bin\\libdxgi.dll"
+    ]
+  },
+  {
+    "name": "cube_test",
+    "id": "cube_test@exe",
+    "type": "executable",
+    "defined_in": "C:\\Users\\berna\\Downloads\\gallium11\\meson.build",
+    "filename": [
+      "C:\\Users\\berna\\Downloads\\gallium11\\build\\cube_test.exe"
+    ],
+    "build_by_default": true,
+    "target_sources": [
+      {
+        "language": "c",
+        "machine": "host",
+        "compiler": [
+          "cc"
+        ],
+        "parameters": [
+          "-IC:\\Users\\berna\\Downloads\\gallium11\\build\\cube_test.exe.p",
+          "-IC:\\Users\\berna\\Downloads\\gallium11\\build",
+          "-IC:\\Users\\berna\\Downloads\\gallium11",
+          "-IC:\\Users\\berna\\Downloads\\gallium11\\include",
+          "-fdiagnostics-color=always",
+          "-D_FILE_OFFSET_BITS=64",
+          "-Wall",
+          "-Winvalid-pch",
+          "-Wextra",
+          "-std=gnu11",
+          "-O3"
+        ],
+        "sources": [
+          "C:\\Users\\berna\\Downloads\\gallium11\\src\\main.c",
+          "C:\\Users\\berna\\Downloads\\gallium11\\src\\gallium_mgr.c",
+          "C:\\Users\\berna\\Downloads\\gallium11\\src\\parser\\dxbc_parser.c",
+          "C:\\Users\\berna\\Downloads\\gallium11\\src\\parser\\obj_parser.c",
+          "C:\\Users\\berna\\Downloads\\gallium11\\src\\shader_parser.c",
+          "C:\\Users\\berna\\Downloads\\gallium11\\src\\pipe_loader_stub.c"
+        ],
+        "generated_sources": [],
+        "unity_sources": []
+      },
+      {
+        "linker": [
+          "cc"
+        ],
+        "parameters": [
+          "-Wl,--allow-shlib-undefined",
+          "-Wl,-O1",
+          "-Wl,--start-group",
+          "-Wl,--start-group",
+          "libd3d11.dll.a",
+          "libdxgi.dll.a",
+          "-Wl,--subsystem,console",
+          "-lkernel32",
+          "-luser32",
+          "-lgdi32",
+          "-lwinspool",
+          "-lshell32",
+          "-lole32",
+          "-loleaut32",
+          "-luuid",
+          "-lcomdlg32",
+          "-ladvapi32",
+          "-Wl,--end-group",
+          "-Wl,--end-group"
+        ]
+      }
+    ],
+    "extra_files": [],
+    "subproject": null,
+    "dependencies": [
+      "libdrm",
+      "gbm"
+    ],
+    "depends": [],
+    "win_subsystem": "console",
+    "installed": false
+  }
+]

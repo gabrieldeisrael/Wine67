@@ -1,0 +1,2 @@
+/home/wsl/gallium11/build/meson-private/cmake_libdrm/CMakeFiles/edit_cache.dir
+/home/wsl/gallium11/build/meson-private/cmake_libdrm/CMakeFiles/rebuild_cache.dir

@@ -1,0 +1,7 @@
+{
+	"InstallScripts" : 
+	[
+		"/home/wsl/gallium11/build/meson-private/cmake_libdrm/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

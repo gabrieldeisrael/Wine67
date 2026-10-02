@@ -1,0 +1,38 @@
+{
+  "host": {
+    "c": {
+      "id": "gcc",
+      "exelist": [
+        "cc"
+      ],
+      "linker_exelist": [
+        "cc"
+      ],
+      "file_suffixes": [
+        "c"
+      ],
+      "default_suffix": "c",
+      "version": "16.1.0",
+      "full_version": "cc (Rev5, Built by MSYS2 project) 16.1.0",
+      "linker_id": "ld.bfd"
+    }
+  },
+  "build": {
+    "c": {
+      "id": "gcc",
+      "exelist": [
+        "cc"
+      ],
+      "linker_exelist": [
+        "cc"
+      ],
+      "file_suffixes": [
+        "c"
+      ],
+      "default_suffix": "c",
+      "version": "16.1.0",
+      "full_version": "cc (Rev5, Built by MSYS2 project) 16.1.0",
+      "linker_id": "ld.bfd"
+    }
+  }
+}

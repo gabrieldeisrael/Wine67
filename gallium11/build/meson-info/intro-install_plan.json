@@ -1,0 +1,32 @@
+{
+  "targets": {
+    "C:\\Users\\berna\\Downloads\\gallium11\\build\\libd3d11.dll": {
+      "destination": "{libdir_shared}\\libd3d11.dll",
+      "tag": "runtime",
+      "subproject": null,
+      "install_rpath": null,
+      "build_rpaths": []
+    },
+    "C:\\Users\\berna\\Downloads\\gallium11\\build\\libd3d11.dll.a": {
+      "destination": "{libdir_shared}\\libd3d11.dll.a",
+      "tag": "devel",
+      "subproject": null,
+      "install_rpath": null,
+      "build_rpaths": []
+    },
+    "C:\\Users\\berna\\Downloads\\gallium11\\build\\libdxgi.dll": {
+      "destination": "{libdir_shared}\\libdxgi.dll",
+      "tag": "runtime",
+      "subproject": null,
+      "install_rpath": null,
+      "build_rpaths": []
+    },
+    "C:\\Users\\berna\\Downloads\\gallium11\\build\\libdxgi.dll.a": {
+      "destination": "{libdir_shared}\\libdxgi.dll.a",
+      "tag": "devel",
+      "subproject": null,
+      "install_rpath": null,
+      "build_rpaths": []
+    }
+  }
+}

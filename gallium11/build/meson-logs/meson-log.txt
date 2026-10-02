@@ -1,0 +1,26 @@
+Build started at 2026-10-01T19:14:30.672221
+Main binary: C:\Users\berna\AppData\Local\Microsoft\WindowsApps\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\python.exe
+Build Options: 
+Python system: Windows
+The Meson build system
+Version: 1.12.1
+Source dir: C:\Users\berna\Downloads\gallium11
+Build dir: C:\Users\berna\Downloads\gallium11\build
+Build type: native build
+WARNING: Failed to activate VS environment: Could not find C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe
+Project name: gallium-eleven
+Project version: 0.1.0
+C compiler for the host machine: cc (gcc 16.1.0 "cc (Rev5, Built by MSYS2 project) 16.1.0")
+C linker for the host machine: cc ld.bfd 2.46
+-----------
+Detecting archiver via: `gcc-ar --version` -> [WinError 2] O sistema não pode encontrar o arquivo especificado
+-----------
+Detecting archiver via: `ar --version` -> [WinError 2] O sistema não pode encontrar o arquivo especificado
+-----------
+Detecting archiver via: `gar --version` -> [WinError 2] O sistema não pode encontrar o arquivo especificado
+
+meson.build:1:0: ERROR: Unknown linker(s): [['gcc-ar'], ['ar'], ['gar']]
+The following exception(s) were encountered:
+Running `gcc-ar --version` gave "[WinError 2] O sistema não pode encontrar o arquivo especificado"
+Running `ar --version` gave "[WinError 2] O sistema não pode encontrar o arquivo especificado"
+Running `gar --version` gave "[WinError 2] O sistema não pode encontrar o arquivo especificado"
