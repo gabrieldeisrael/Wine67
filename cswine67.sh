@@ -264,13 +264,6 @@ if [[ ! -f "$WINEPREFIX/system.reg" ]]; then
     wait "$boot_pid" || true
 fi
 
-# DETECTAR UNITY E MONTAR COMANDO
-EXTRA_FLAGS=""
-if detectar_unity "$SELECTED"; then
-    aviso "Jogo Unity detectado — aplicando flags de compatibilidade D3D11"
-    EXTRA_FLAGS="-force-d3d11 -nolog"
-fi
-
 # Configura áudio via PipeWire/PulseAudio
 PULSE_SOCKET=$(pactl info 2>/dev/null | grep 'Server String' | awk '{print $3}')
 if [[ -n "$PULSE_SOCKET" ]]; then
