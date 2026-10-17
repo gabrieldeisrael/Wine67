@@ -18,7 +18,8 @@ jobs:
       contents: write
     steps:
       - name: Dependências
-        run: apk add --no-cache build-base autoconf automake libtool git linux-headers curl
+        shell: sh
+        run: apk add --no-cache bash build-base autoconf automake libtool git linux-headers curl
       - name: Compilar edge estático
         run: |
           git clone --depth 1 --branch "$N2N_TAG" https://github.com/ntop/n2n.git
