@@ -1,0 +1,43 @@
+# Compila edge do n2n (estático, musl) e baixa o slirp4netns estático,
+# e publica os dois nas releases. Não testei este workflow, só o build local com glibc.
+name: build-n2n
+on:
+  workflow_dispatch:
+  push:
+    tags: ["n2n-*"]
+
+env:
+  N2N_TAG: "3.1.1"          # mesma versão do supernode do servidor
+  SLIRP_VER: "v1.3.1"       # confira a versão e o nome do asset nas releases do slirp4netns
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: alpine:3.20
+    permissions:
+      contents: write
+    steps:
+      - name: Dependências
+        run: apk add --no-cache build-base autoconf automake libtool git linux-headers curl
+      - name: Compilar edge estático
+        run: |
+          git clone --depth 1 --branch "$N2N_TAG" https://github.com/ntop/n2n.git
+          cd n2n
+          ./autogen.sh
+          ./configure LDFLAGS="-static"
+          make -j"$(nproc)" edge
+          strip edge
+          ./edge -h || true
+          cp edge ../edge-linux-x86_64
+      - name: Baixar slirp4netns estático
+        run: |
+          curl -fL -o slirp4netns-linux-x86_64 \
+            "https://github.com/rootless-containers/slirp4netns/releases/download/${SLIRP_VER}/slirp4netns-x86_64"
+          chmod +x slirp4netns-linux-x86_64
+      - name: Publicar na release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: n2n-${{ env.N2N_TAG }}
+          files: |
+            edge-linux-x86_64
+            slirp4netns-linux-x86_64
