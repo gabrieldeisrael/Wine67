@@ -3,11 +3,13 @@
 # ESSE SCRIPT PODE SER USADO EM CERTOS CASOS EMPRESARIAIS, MAS NÃO RECOMENDO O USO
 set -uo pipefail
 
+
 cleanup() {
     jobs -p | xargs -r kill 2>/dev/null || true
 }
 trap cleanup EXIT INT TERM
 
+WINE67_VERSION="2.4e"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALL_DIR="$HOME/.cache/wine67"
 WINE_BIN="$INSTALL_DIR/bin/wine"
@@ -159,7 +161,17 @@ for arg in "$@"; do
             exit 1
             ;;
         --version)
-            echo "Wine67 v2.3"
+            echo "Wine67 $WINE67_VERSION"
+            ultima="$(curl -s --max-time 5 "https://api.github.com/repos/gabrieldeisrael/Wine67/tags" 2>/dev/null \
+    | grep '"name"' | cut -d'"' -f4 | sort -V | tail -n1)"
+            if [ -z "$ultima" ]; then
+                echo "(não consegui checar a última versão no GitHub)"
+            elif [ "$ultima" = "$WINE67_VERSION" ]; then
+                echo "Você está na versão mais recente."
+            else
+                echo "Última tag no GitHub: $ultima"
+                echo "Baixe em: https://github.com/gabrieldeisrael/Wine67"
+            fi
             exit 0
             ;;
         --status)
@@ -272,6 +284,7 @@ mkdir -p "$INSTALL_DIR"
     echo -e "  ${DIM}Wine-Kron4ek wow64 Portable Launcher — sem sudo${RESET}"
     echo -e "  ${DIM}Base: $INSTALL_DIR${RESET}"
     echo -e "  ${DIM}Versão fixa do Wine: $WINE_VERSION${RESET}"
+    echo -e "  ${DIM}Modo de Emergencia: congelado em $WINE_VERSION para compatibilidade.\n Não deve afetar o uso.${RESET}"
     echo ""
 }
 

@@ -84,6 +84,7 @@ mkdir -p "$INSTALL_DIR"
     echo -e "  ${DIM}Counter-Strike 1.6 Portable — sem sudo${RESET}"
     echo -e "  ${DIM}Base: $INSTALL_DIR${RESET}"
     echo -e "  ${DIM}Versão fixa do Wine: $WINE_VERSION${RESET}"
+    echo -e "  ${DIM}Modo de Emergencia: congelado em $WINE_VERSION para compatibilidade.\n Não deve afetar o uso.${RESET}"
     echo ""
 }
 
