@@ -9,7 +9,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-WINE67_VERSION="2.4e"
+WINE67_VERSION="v2.4e"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALL_DIR="$HOME/.cache/wine67"
 WINE_BIN="$INSTALL_DIR/bin/wine"
