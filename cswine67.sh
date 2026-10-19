@@ -6,6 +6,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALL_DIR="$HOME/.cache/wine67"
 WINE_BIN="$INSTALL_DIR/bin/wine"
 
+WINE_VERSION="11.19"
+WINE_URL_STABLE="https://github.com/Kron4ek/Wine-Builds/releases/download/11.19/wine-11.19-amd64-wow64.tar.xz"
+
 APP_URL="https://github.com/gabrieldeisrael/Wine67/releases/download/v1.2/Counter-Strike_1.6_Portable.exe"
 APP_NAME="Counter-Strike_1.6_Portable.exe"
 
@@ -51,19 +54,19 @@ obter_url_wine() {
           grep -o "https://github.com/Kron4ek/Wine-Builds/releases/download/.*/wine-.*-amd64-wow64.tar.xz" | head -n1)
 
     if [ -z "$url" ]; then
-        aviso "API do GitHub indisponível — usando versão fallback"
-        url="https://github.com/Kron4ek/Wine-Builds/releases/download/11.10/wine-11.10-amd64-wow64.tar.xz"
+        aviso "API do GitHub indisponível — usando versão estável fixa"
+        echo "$WINE_URL_STABLE"
+        return 0
     fi
-    echo "$url"
-}
 
+    # Modo de emergência: congelar em 11.19 por compatibilidade comprovada.
+    echo "$WINE_URL_STABLE"
+}
 
 # Checagens de dependências
 command -v curl &>/dev/null || erro "Instale o comando 'curl' para continuar."
 command -v tar  &>/dev/null || erro "'tar' não encontrado."
 command -v bash &>/dev/null || erro "'bash' não encontrado."
-
-# Verifica versão do bash (mapfile requer bash >= 4.0)
 (( BASH_VERSINFO[0] >= 4 )) || erro "Bash 4.0 ou superior necessário (versão atual: $BASH_VERSION)"
 
 mkdir -p "$INSTALL_DIR"
@@ -80,14 +83,13 @@ mkdir -p "$INSTALL_DIR"
     echo -e "${RESET}"
     echo -e "  ${DIM}Counter-Strike 1.6 Portable — sem sudo${RESET}"
     echo -e "  ${DIM}Base: $INSTALL_DIR${RESET}"
+    echo -e "  ${DIM}Versão fixa do Wine: $WINE_VERSION${RESET}"
     echo ""
 }
 
-
-# VERIFICAR ESPAÇO EM DISCO ANTES DE BAIXAR
 verificar_espaco() {
     local destino="$1"
-    local minimo_mb="${2:-1500}"  # Proton/Wine pode passar de 1 GB
+    local minimo_mb="${2:-1500}"
     local disponivel_mb
     disponivel_mb=$(df -m "$destino" 2>/dev/null | awk 'NR==2 {print $4}')
     if [ -n "$disponivel_mb" ] && [ "$disponivel_mb" -lt "$minimo_mb" ]; then
@@ -97,17 +99,14 @@ verificar_espaco() {
 
 baixar() {
     local url="$1" dest="$2" nome="$3"
-
     verificar_espaco "$(dirname "$dest")"
 
     info "Baixando $nome..."
-    # -# mostra barra de progresso no terminal
     if ! curl -L --max-time 600 -# -o "$dest" "$url"; then
         rm -f "$dest"
         erro "Falha ao baixar $nome. Verifique sua conexão."
     fi
 
-    # Checa se o servidor não retornou uma pagina de erro HTML
     if command -v file &>/dev/null && file "$dest" 2>/dev/null | grep -qi "HTML\|ASCII text"; then
         rm -f "$dest"
         erro "Servidor retornou erro ao baixar $nome (resposta não é um arquivo válido)."
@@ -116,25 +115,22 @@ baixar() {
     ok "Download concluído: $(du -h "$dest" | cut -f1)"
 }
 
-# BUSCAR .TAR LOCAL (pendrive, pasta do script, etc)
 buscar_tar() {
     local padroes=("wine-*-amd64-wow64.tar.xz" "wine-*.tar.xz" "wine-*.tar.gz" "wine-*.tar")
     local resultado
-    
+
     for padrao in "${padroes[@]}"; do
         resultado=$(find "$SCRIPT_DIR" -maxdepth 3 -name "$padrao" -type f -print -quit 2>/dev/null)
         [[ -n "$resultado" ]] && echo "$resultado" && return 0
-        
-        # Busca em drives/mídia com menor profundidade
+
         resultado=$(find /media /run/media /mnt -maxdepth 3 -name "$padrao" -type f -print -quit 2>/dev/null)
         [[ -n "$resultado" ]] && echo "$resultado" && return 0
     done
     return 1
 }
 
-# INSTALAR WINE
 instalar_wine() {
-    info "Instalando Wine Kron4ek wow64..."
+    info "Instalando Wine Kron4ek wow64 (versão fixa $WINE_VERSION)..."
     local GE_TAR
     GE_TAR=$(buscar_tar)
 
@@ -166,9 +162,8 @@ instalar_wine() {
     spinner "$tar_pid" "Extraindo Wine (pode demorar)..."
     wait "$tar_pid" || erro "Falha ao extrair. Delete '$INSTALL_DIR' e tente novamente."
 
-    # Otimização: usar find com -print0 e xargs para chmod eficiente
     find "$INSTALL_DIR/bin" -type f -print0 2>/dev/null | xargs -0 chmod +x 2>/dev/null
-    
+
     if [[ ! -f "$WINE_BIN" ]]; then
         local found
         found=$(find "$INSTALL_DIR" -name "wine" -type f -print -quit 2>/dev/null)
@@ -183,19 +178,6 @@ instalar_wine() {
     ok "Wine instalado com sucesso!"
 }
 
-detectar_unity() {
-    local exe_dir
-    exe_dir="$(dirname "$1")"
-    
-    # Primeiro tenta encontrar UnityPlayer.dll diretamente
-    [[ -f "$exe_dir/UnityPlayer.dll" ]] && return 0
-    
-    # Depois verifica por pastas _Data típicas do Unity
-    find "$exe_dir" -maxdepth 1 -type d -name "*_Data" -print -quit 2>/dev/null | grep -q . && return 0
-    
-    return 1
-}
-
 # INSTALAÇÃO
 if [[ ! -f "$WINE_BIN" ]]; then
     instalar_wine
@@ -204,15 +186,13 @@ fi
 [[ ! -x "$WINE_BIN" ]] && chmod +x "$WINE_BIN"
 
 ok "Wine: $WINE_BIN"
-ok "Versão: $("$WINE_BIN" --version 2>/dev/null || echo 'desconhecida')"
+ok "Versão: $($WINE_BIN --version 2>/dev/null || echo 'desconhecida')"
 
-# VARIÁVEIS DE AMBIENTE
 export LD_LIBRARY_PATH="$INSTALL_DIR/lib:$INSTALL_DIR/lib64:${LD_LIBRARY_PATH:-}"
 export PATH="$INSTALL_DIR/bin:$PATH"
 export WINELOADER="$WINE_BIN"
 export WINESERVER="$INSTALL_DIR/bin/wineserver"
 
-# Compatibilidade com wayland
 if [ "$XDG_SESSION_TYPE" = "wayland" ]; then
     export GDK_BACKEND=x11
     export QT_QPA_PLATFORM=xcb
@@ -220,7 +200,6 @@ fi
 
 [ -z "${DISPLAY:-}" ] && export DISPLAY=:0
 
-# Esync/Fsync se o kernel suportar
 if grep -qw "futex_waitv" /proc/kallsyms 2>/dev/null || [ -e /dev/futex-waitv ]; then
     export WINEESYNC=1
     export WINEFSYNC=1
@@ -232,10 +211,6 @@ export WINEDLLOVERRIDES="uiautomationcore=d;oleacc=d;tabtip.exe=d;winemenubuilde
 export NO_AT_BRIDGE=1
 export QT_ACCESSIBILITY=0
 
-
-# ============================================================
-#  BAIXAR O APP ESPECIALIZADO (substitui a busca de .exe)
-# ============================================================
 echo ""
 mkdir -p "$APP_DIR"
 
@@ -251,7 +226,6 @@ SELECTED="$APP_PATH"
 [[ -z "$SELECTED" ]] && erro "Nenhum arquivo selecionado."
 [[ ! -f "$SELECTED" ]] && erro "Arquivo não encontrado: '$SELECTED'"
 
-# PREFIX ISOLADO POR JOGO
 GAME_NAME="$(basename "$SELECTED" .exe | tr -cd '[:alnum:]_-')"
 export WINEPREFIX="$INSTALL_DIR/prefixes/$GAME_NAME"
 
@@ -264,7 +238,6 @@ if [[ ! -f "$WINEPREFIX/system.reg" ]]; then
     wait "$boot_pid" || true
 fi
 
-# Configura áudio via PipeWire/PulseAudio
 PULSE_SOCKET=$(pactl info 2>/dev/null | grep 'Server String' | awk '{print $3}')
 if [[ -n "$PULSE_SOCKET" ]]; then
     export PULSE_SERVER="unix:$PULSE_SOCKET"
@@ -274,16 +247,12 @@ echo ""
 {
     echo -e "  ${GREEN}╔══════════════════════════════════════════════════╗${RESET}"
     echo -e "  ${GREEN}║  🎮  $(basename "$SELECTED")${RESET}"
-    [[ -n "$EXTRA_FLAGS" ]] && echo -e "  ${GREEN}║  🔧  Flags: $EXTRA_FLAGS${RESET}"
     echo -e "  ${GREEN}║  📁  Prefix: $GAME_NAME${RESET}"
     echo -e "  ${GREEN}╚══════════════════════════════════════════════════╝${RESET}"
 }
 echo ""
 
-# EXECUTAR - Usar array para argumentos seguros
 declare -a wine_args=("$SELECTED")
-[[ -n "$EXTRA_FLAGS" ]] && wine_args+=($EXTRA_FLAGS)
-
 WINEARCH=win64 "$WINE_BIN" "${wine_args[@]}"
 
 EXIT=$?
