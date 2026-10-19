@@ -12,6 +12,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALL_DIR="$HOME/.cache/wine67"
 WINE_BIN="$INSTALL_DIR/bin/wine"
 
+WINE_VERSION="11.19"
+WINE_URL_STABLE="https://github.com/Kron4ek/Wine-Builds/releases/download/11.19/wine-11.19-amd64-wow64.tar.xz"
 
 ODEIO_MONO=0
 MORTE_AO_GECKO=0
@@ -85,12 +87,12 @@ for arg in "$@"; do
             ;;
         --lol)        
              for i in {1..50}; do
-                echo "HAHAHAHAHAHAAHAHA"
-            done
-            exit 42
-            ;;
+                 echo "HAHAHAHAHAHAAHAHA"
+             done
+             exit 42
+             ;;
         --why) 
-            echo "Por que você está executando este script? É apenas um inicializador do Wine. Se quiser jogar, fique à vontade. Se quiser modificá-lo, fique à vontade. Mas, se está apenas curioso, então por quê?"
+            echo "Por que você está executando este script? É apenas um inicializador do Wine. Se quiser jogar, fique à vontade. Se quiser modificá-lo, fique à vontade. Mas, se está apenas fazendo barganha para alegrar o dia, então é um pouco triste."
             sleep 10
             echo "Apenas saia daqui e nunca mais use --why."
             sleep 10
@@ -229,14 +231,21 @@ spinner() {
 
 obter_url_wine() {
     local url
-    url=$(curl -s --max-time 15 "https://api.github.com/repos/Kron4ek/Wine-Builds/releases/latest" 2>/dev/null | \
-          grep -o "https://github.com/Kron4ek/Wine-Builds/releases/download/.*/wine-.*-amd64-wow64.tar.xz" | head -n1)
+    url="$(curl -s --max-time 15 "https://api.github.com/repos/Kron4ek/Wine-Builds/releases/latest" 2>/dev/null | \
+          grep -o "https://github.com/Kron4ek/Wine-Builds/releases/download/.*/wine-.*-amd64-wow64.tar.xz" | head -n1)"
 
     if [ -z "$url" ]; then
-        aviso "API do GitHub indisponível — usando versão fallback"
-        url="https://github.com/Kron4ek/Wine-Builds/releases/download/11.10/wine-11.10-amd64-wow64.tar.xz"
+        aviso "API do GitHub indisponível — usando versão estável fixa"
+        echo "$WINE_URL_STABLE"
+        return 0
     fi
-    echo "$url"
+
+    # trava em 11.19 por estabilidade conhecida no ambiente atual
+    if [[ "$url" == *"11.19"* ]] || [[ "$url" == *"11.20"* ]] || [[ "$url" == *"11.21"* ]]; then
+        echo "$WINE_URL_STABLE"
+    else
+        echo "$WINE_URL_STABLE"
+    fi
 }
 
 
@@ -262,6 +271,7 @@ mkdir -p "$INSTALL_DIR"
     echo -e "${RESET}"
     echo -e "  ${DIM}Wine-Kron4ek wow64 Portable Launcher — sem sudo${RESET}"
     echo -e "  ${DIM}Base: $INSTALL_DIR${RESET}"
+    echo -e "  ${DIM}Versão fixa do Wine: $WINE_VERSION${RESET}"
     echo ""
 }
 
@@ -317,7 +327,7 @@ buscar_tar() {
 
 # tá literalmente no nome da variavel, mas é a função que instala o wine
 instalar_wine() {
-    info "Instalando Wine Kron4ek wow64..."
+    info "Instalando Wine Kron4ek wow64 (versão fixa $WINE_VERSION)..."
     local GE_TAR
     GE_TAR=$(buscar_tar)
 
