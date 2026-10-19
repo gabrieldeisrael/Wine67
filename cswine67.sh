@@ -45,18 +45,17 @@ spinner() {
     echo -ne "\r  ${GREEN}[✔]${RESET}  ${msg}\n"
 }
 
-obter_url_wine() {
+obter_url_wine_estavel() {
     local url
-    url=$(curl -s --max-time 15 "https://api.github.com/repos/Kron4ek/Wine-Builds/releases/latest" 2>/dev/null | \
+    url=$(curl -s --max-time 20 "https://api.github.com/repos/Kron4ek/Wine-Builds/releases/latest" 2>/dev/null | \
           grep -o "https://github.com/Kron4ek/Wine-Builds/releases/download/.*/wine-.*-amd64-wow64.tar.xz" | head -n1)
 
     if [ -z "$url" ]; then
-        aviso "API do GitHub indisponível — usando versão fallback"
-        url="https://github.com/Kron4ek/Wine-Builds/releases/download/11.10/wine-11.10-amd64-wow64.tar.xz"
+        echo "https://github.com/Kron4ek/Wine-Builds/releases/download/11.10/wine-11.10-amd64-wow64.tar.xz"
+    else
+        echo "$url"
     fi
-    echo "$url"
 }
-
 
 # Checagens de dependências
 command -v curl &>/dev/null || erro "Instale o comando 'curl' para continuar."
@@ -83,11 +82,10 @@ mkdir -p "$INSTALL_DIR"
     echo ""
 }
 
-
 # VERIFICAR ESPAÇO EM DISCO ANTES DE BAIXAR
 verificar_espaco() {
     local destino="$1"
-    local minimo_mb="${2:-1500}"  # Proton/Wine pode passar de 1 GB
+    local minimo_mb="${2:-1500}"
     local disponivel_mb
     disponivel_mb=$(df -m "$destino" 2>/dev/null | awk 'NR==2 {print $4}')
     if [ -n "$disponivel_mb" ] && [ "$disponivel_mb" -lt "$minimo_mb" ]; then
@@ -101,13 +99,11 @@ baixar() {
     verificar_espaco "$(dirname "$dest")"
 
     info "Baixando $nome..."
-    # -# mostra barra de progresso no terminal
     if ! curl -L --max-time 600 -# -o "$dest" "$url"; then
         rm -f "$dest"
         erro "Falha ao baixar $nome. Verifique sua conexão."
     fi
 
-    # Checa se o servidor não retornou uma pagina de erro HTML
     if command -v file &>/dev/null && file "$dest" 2>/dev/null | grep -qi "HTML\|ASCII text"; then
         rm -f "$dest"
         erro "Servidor retornou erro ao baixar $nome (resposta não é um arquivo válido)."
@@ -120,12 +116,11 @@ baixar() {
 buscar_tar() {
     local padroes=("wine-*-amd64-wow64.tar.xz" "wine-*.tar.xz" "wine-*.tar.gz" "wine-*.tar")
     local resultado
-    
+
     for padrao in "${padroes[@]}"; do
         resultado=$(find "$SCRIPT_DIR" -maxdepth 3 -name "$padrao" -type f -print -quit 2>/dev/null)
         [[ -n "$resultado" ]] && echo "$resultado" && return 0
-        
-        # Busca em drives/mídia com menor profundidade
+
         resultado=$(find /media /run/media /mnt -maxdepth 3 -name "$padrao" -type f -print -quit 2>/dev/null)
         [[ -n "$resultado" ]] && echo "$resultado" && return 0
     done
@@ -143,7 +138,7 @@ instalar_wine() {
     else
         GE_TAR="$INSTALL_DIR/wine-kron4ek.tar.xz"
         local WINE_URL
-        WINE_URL=$(obter_url_wine)
+        WINE_URL=$(obter_url_wine_estavel)
         baixar "$WINE_URL" "$GE_TAR" "Wine-Kron4ek wow64"
     fi
 
@@ -166,9 +161,8 @@ instalar_wine() {
     spinner "$tar_pid" "Extraindo Wine (pode demorar)..."
     wait "$tar_pid" || erro "Falha ao extrair. Delete '$INSTALL_DIR' e tente novamente."
 
-    # Otimização: usar find com -print0 e xargs para chmod eficiente
     find "$INSTALL_DIR/bin" -type f -print0 2>/dev/null | xargs -0 chmod +x 2>/dev/null
-    
+
     if [[ ! -f "$WINE_BIN" ]]; then
         local found
         found=$(find "$INSTALL_DIR" -name "wine" -type f -print -quit 2>/dev/null)
@@ -183,17 +177,24 @@ instalar_wine() {
     ok "Wine instalado com sucesso!"
 }
 
-detectar_unity() {
-    local exe_dir
-    exe_dir="$(dirname "$1")"
-    
-    # Primeiro tenta encontrar UnityPlayer.dll diretamente
-    [[ -f "$exe_dir/UnityPlayer.dll" ]] && return 0
-    
-    # Depois verifica por pastas _Data típicas do Unity
-    find "$exe_dir" -maxdepth 1 -type d -name "*_Data" -print -quit 2>/dev/null | grep -q . && return 0
-    
-    return 1
+inicializar_prefixo() {
+    local prefix="$1"
+    local arch="${2:-win64}"
+    local display="${DISPLAY:-:0}"
+
+    mkdir -p "$prefix"
+
+    if [[ "$XDG_SESSION_TYPE" == "wayland" ]]; then
+        export GDK_BACKEND=x11
+        export QT_QPA_PLATFORM=xcb
+        export SDL_VIDEODRIVER=x11
+    fi
+
+    info "Inicializando prefixo Wine ($arch)..."
+    WINEARCH="$arch" DISPLAY="$display" WINEPREFIX="$prefix" "$WINE_BIN" wineboot -i &>/dev/null &
+    local boot_pid=$!
+    spinner "$boot_pid" "Configurando ambiente Wine..."
+    wait "$boot_pid"
 }
 
 # INSTALAÇÃO
@@ -216,6 +217,7 @@ export WINESERVER="$INSTALL_DIR/bin/wineserver"
 if [ "$XDG_SESSION_TYPE" = "wayland" ]; then
     export GDK_BACKEND=x11
     export QT_QPA_PLATFORM=xcb
+    export SDL_VIDEODRIVER=x11
 fi
 
 [ -z "${DISPLAY:-}" ] && export DISPLAY=:0
@@ -231,7 +233,6 @@ fi
 export WINEDLLOVERRIDES="uiautomationcore=d;oleacc=d;tabtip.exe=d;winemenubuilder=d;rpcss=n;midimap=n;steam_api=b,n"
 export NO_AT_BRIDGE=1
 export QT_ACCESSIBILITY=0
-
 
 # ============================================================
 #  BAIXAR O APP ESPECIALIZADO (substitui a busca de .exe)
@@ -258,10 +259,15 @@ export WINEPREFIX="$INSTALL_DIR/prefixes/$GAME_NAME"
 if [[ ! -f "$WINEPREFIX/system.reg" ]]; then
     mkdir -p "$WINEPREFIX"
     info "Inicializando ambiente do jogo pela primeira vez..."
-    WINEARCH=win64 "$WINE_BIN" wineboot -i &>/dev/null &
-    boot_pid=$!
-    spinner "$boot_pid" "Configurando ambiente Wine..."
-    wait "$boot_pid" || true
+
+    if ! inicializar_prefixo "$WINEPREFIX" "win64"; then
+        aviso "Falha ao inicializar prefixo Win64. Tentando fallback para Win32..."
+        rm -rf "$WINEPREFIX"
+        mkdir -p "$WINEPREFIX"
+        if ! inicializar_prefixo "$WINEPREFIX" "win32"; then
+            erro "Não foi possível inicializar o prefixo Wine. O ambiente pode estar incompatível com este build do Wine."
+        fi
+    fi
 fi
 
 # Configura áudio via PipeWire/PulseAudio
@@ -282,10 +288,24 @@ echo ""
 
 # EXECUTAR - Usar array para argumentos seguros
 declare -a wine_args=("$SELECTED")
-[[ -n "$EXTRA_FLAGS" ]] && wine_args+=($EXTRA_FLAGS)
+[[ -n "$EXTRA_FLAGS" ]] && wine_args+=( $EXTRA_FLAGS )
 
-WINEARCH=win64 "$WINE_BIN" "${wine_args[@]}"
+# Tentar executar com Win64; se falhar, tentar Win32
+EXIT=1
+for arch in win64 win32; do
+    export WINEARCH="$arch"
+    info "Executando com WINEARCH=$WINEARCH"
+    WINEARCH="$arch" "$WINE_BIN" "${wine_args[@]}"
+    EXIT=$?
+    if [[ $EXIT -eq 0 ]]; then
+        break
+    fi
+    aviso "Falha ao executar com WINEARCH=$arch (código $EXIT). Tentando fallback..."
+    sleep 1
+    if [[ "$arch" == "win32" ]]; then
+        break
+    fi
+done
 
-EXIT=$?
 echo ""
 (( EXIT == 0 )) && ok "Encerrado normalmente." || aviso "Código de saída: $EXIT"
