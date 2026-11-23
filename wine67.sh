@@ -419,7 +419,7 @@ export WINELOADER="$WINE_BIN"
 export WINESERVER="$INSTALL_DIR/bin/wineserver"
 
 # para ter wayland
-if [ "$XDG_SESSION_TYPE" = "wayland" ]; then
+if [ "${XDG_SESSION_TYPE:-}" = "wayland" ]; then
     export GDK_BACKEND=x11
     export QT_QPA_PLATFORM=xcb
 fi
@@ -454,16 +454,16 @@ instalar_dxvk() {
         return
     fi
     local dxvk_dir="$INSTALL_DIR/dxvk"
-    if [ ! -d "$dxvk_dir" ]; then
+    if [ ! -f "$dxvk_dir/x64/d3d11.dll" ]; then
         echo "Configurando DXVK..."
         mkdir -p "$dxvk_dir"
         local url
-        url=$(curl -s "https://api.github.com/repos/doitsujin/dxvk/releases/latest" | grep -o "https://github.com/doitsujin/dxvk/releases/download/.*/dxvk-.*.tar.gz" | head -n1)
-        curl -s -L "$url" | tar -xz -C "$dxvk_dir" --strip-components=1
+        url=$(curl -s "https://api.github.com/repos/doitsujin/dxvk/releases/latest" | grep -o "https://github.com/doitsujin/dxvk/releases/download/.*/dxvk-.*.tar.gz" | grep -v native | head -n1)
+        if [ -n "$url" ]; then curl -s -L "$url" | tar -xz -C "$dxvk_dir" --strip-components=1; else aviso "Não achei o DXVK (API do GitHub limitou?). Rode de novo mais tarde."; fi
     fi
     # Adicionar ao path de dlls do wine se vulkan estiver presente
-    if command -v vulkaninfo >/dev/null 2>&1 || [ -e /usr/lib/libvulkan.so.1 ]; then
-        export WINEPATH="$dxvk_dir/x64;$WINEPATH"
+    if command -v vulkaninfo >/dev/null 2>&1 || [ -e /usr/lib/libvulkan.so.1 ] || [ -e /usr/lib/x86_64-linux-gnu/libvulkan.so.1 ] || [ -e /usr/lib64/libvulkan.so.1 ]; then
+        export WINEPATH="$dxvk_dir/x64${WINEPATH:+;$WINEPATH}"
         export WINEDLLOVERRIDES="d3d11=n;dxgi=n;$WINEDLLOVERRIDES"
     fi
 }
@@ -528,6 +528,7 @@ fi
 [[ -z "$SELECTED" ]] && erro "Nenhum arquivo selecionado."
 [[ ! -f "$SELECTED" ]] && erro "Arquivo não encontrado: '$SELECTED'"
 
+SELECTED="$(realpath "$SELECTED")"
 # PREFIX ISOLADO POR JOGO
 GAME_NAME="$(basename "$SELECTED" .exe | tr -cd '[:alnum:]_-')"
 export WINEPREFIX="$INSTALL_DIR/prefixes/$GAME_NAME"
@@ -541,6 +542,10 @@ if [[ ! -f "$WINEPREFIX/system.reg" ]]; then
     if ! wait "$boot_pid"; then
         erro "Falha ao inicializar o prefixo Wine."
     fi
+fi
+if [[ "$WINEDLLOVERRIDES" == *d3d11=n* ]] && [ -f "$INSTALL_DIR/dxvk/x64/d3d11.dll" ]; then
+    cp -f "$INSTALL_DIR"/dxvk/x64/*.dll "$WINEPREFIX/drive_c/windows/system32/" 2>/dev/null
+    [ -d "$INSTALL_DIR/dxvk/x32" ] && cp -f "$INSTALL_DIR"/dxvk/x32/*.dll "$WINEPREFIX/drive_c/windows/syswow64/" 2>/dev/null
 fi
 if (( RUN_SHELL == 1 )); then
     info "Abrindo shell do prefixo Wine..."
@@ -580,7 +585,7 @@ echo ""
 echo ""
 
 
-WINEARCH=win64 "$WINE_BIN" "${wine_args[@]}"
+cd "$(dirname "$SELECTED")" && WINEARCH=win64 "$WINE_BIN" "${wine_args[@]}"
 
 EXIT=$?
 echo ""
