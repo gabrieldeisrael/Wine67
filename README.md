@@ -5,7 +5,7 @@
 > ⚠️ **Recomendado: use o `wine67.sh`**
 > O projeto conta com mais de uma versão do script, mas o **`wine67.sh` é o mais estável** e o recomendado para uso no dia a dia. Prefira sempre essa versão ao rodar o projeto.
 
-> 🧪 O `startx.sh` é uma versão experimental e pode ter comportamento, opções e estrutura de instalação diferentes. Use-o apenas para testes.
+> 🧪 O `startx.sh` é uma versão experimental e pode ter comportamento, opções e estrutura de instalação diferentes. Use-o apenas para testes. (Roda mais jogos como Gmod e mais avançados)
 
 ## Funcionalidades
 
