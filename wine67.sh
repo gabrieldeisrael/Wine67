@@ -9,7 +9,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-WINE67_VERSION="v2.4e"
+WINE67_VERSION="v2.5"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALL_DIR="$HOME/.cache/wine67"
 WINE_BIN="$INSTALL_DIR/bin/wine"
@@ -283,8 +283,6 @@ mkdir -p "$INSTALL_DIR"
     echo -e "${RESET}"
     echo -e "  ${DIM}Wine-Kron4ek wow64 Portable Launcher — sem sudo${RESET}"
     echo -e "  ${DIM}Base: $INSTALL_DIR${RESET}"
-    echo -e "  ${DIM}Versão fixa do Wine: $WINE_VERSION${RESET}"
-    echo -e "  ${DIM}Modo de Emergencia: congelado em $WINE_VERSION para compatibilidade.\n Não deve afetar o uso.${RESET}"
     echo ""
 }
 
